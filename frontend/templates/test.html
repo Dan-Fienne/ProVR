@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>PDB Parser Harness</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <style>
+        body {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            padding: 16px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 300px;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        button, input {
+            padding: 6px 10px;
+        }
+
+        pre {
+            background: #111;
+            color: #0f0;
+            padding: 12px;
+            overflow: auto;
+            max-height: 50vh;
+        }
+    </style>
+</head>
+<body>
+<h2>PDB Parser Harness</h2>
+
+<div class="row">
+    <input id="pdbId" placeholder="PDB ID (e.g. 1CRN)"/>
+    <button id="btnFetch">Fetch from RCSB</button>
+    <input type="file" id="fileInput" accept=".pdb,.ent,.txt"/>
+    <button id="btnParse">Parse textarea</button>
+</div>
+
+<textarea id="pdbText" placeholder="Paste PDB text here"></textarea>
+<pre id="out">Ready.</pre>
+
+<p>
+    控制台可用命令：
+    help(), loadPDB('1CRN'), parseTextarea(), inspect('summary'), inspect('chains'), inspect('chain','A'),
+    inspect('res','A','123'), inspect('atom',123), inspect('bonds',123), inspect('sse','A'), validateCurrent()
+</p>
+
+<script type="module" src="./handle.js"></script>
+</body>
+</html>

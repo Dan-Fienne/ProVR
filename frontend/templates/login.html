@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+    <title>Sign in</title>
+
+    <style>
+        :root {
+            --btn-h: 48px;
+            --radius-xl: 24px;
+            --radius-lg: 14px;
+            --dur: .25s;
+            --border: #E0E0E0;
+            --shadow: 0 6px 18px rgba(0, 0, 0, .12);
+        }
+
+        /* Reset -------------------------------------------------------*/
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font: inherit
+        }
+
+        body {
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC",
+            Helvetica, Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #FFF;
+            color: #1c1c1e;
+        }
+
+        /* Card --------------------------------------------------------*/
+        .card {
+            width: min(400px, 90%);
+            padding: 40px 32px 32px;
+            border-radius: var(--radius-xl);
+            background: rgba(255, 255, 255, .8);
+            border: 1px solid rgba(0, 0, 0, .05);
+            backdrop-filter: blur(20px) saturate(120%);
+            box-shadow: var(--shadow);
+            text-align: center;
+        }
+
+        .card h1 {
+            font-size: clamp(1.5rem, 4vw, 2rem);
+            font-weight: 600;
+            margin-bottom: 28px
+        }
+
+        /* Button group ----------------------------------------------*/
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px
+        }
+
+        /* Button base -----------------------------------------------*/
+        .btn {
+            position: relative; /* 让图标可绝对定位 */
+            width: 100%;
+            height: var(--btn-h);
+            border-radius: var(--radius-lg);
+            background: #FFF;
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #000;
+            text-decoration: none;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, .08);
+            transition: transform var(--dur), box-shadow var(--dur);
+            will-change: transform;
+        }
+
+        /* 图标：固定 22×22，放在左侧 20px 处 ------------------------*/
+        .btn img {
+            width: 22px;
+            height: 22px;
+            position: absolute;
+            left: 20px; /* 所有按钮左侧对齐 */
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        /* Hover / active --------------------------------------------*/
+        @media (hover: hover) {
+            .btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 7px 16px rgba(0, 0, 0, .14)
+            }
+        }
+
+        .btn:active {
+            transform: translateY(0);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .1)
+        }
+
+        footer {
+            margin-top: 24px;
+            font-size: .75rem;
+            color: #6d6d6f
+        }
+
+        a.ext {
+            color: inherit;
+            text-decoration: underline
+        }
+    </style>
+</head>
+
+<body>
+<main class="card" role="main">
+    <h1>Sign in ProVR</h1>
+
+    <div class="btn-group">
+        <!-- GitHub -->
+        <a class="btn" href="/login/github">
+            <img src="{{ url_for('static', path='img/github.svg') }}" alt="GitHub">
+            Continue with GitHub
+        </a>
+
+        <!-- Google -->
+        <a class="btn" href="/login/google">
+            <img src="{{ url_for('static', path='img/google.svg') }}" alt="Google">
+            Continue with Google
+        </a>
+
+        <!-- Apple -->
+        <a class="btn" href="/login/apple">
+            <img src="{{ url_for('static', path='img/apple.svg') }}" alt="Apple">
+            Continue with Apple
+        </a>
+    </div>
+
+    <footer>
+        Problem signing in? <a class="ext" href="#">Get help</a>
+    </footer>
+</main>
+</body>
+</html>
