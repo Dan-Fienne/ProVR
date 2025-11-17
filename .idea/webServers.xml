@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="c8b5ee09-45d5-4e2a-9149-d6cba8a5641a" name="并行科技">
+        <fileTransfer rootFolder="/home/dalhxwlyjsuo/criait_yangdf/code" accessType="SFTP" host="123.57.18.110" port="2222" sshConfigId="856748fd-46da-49f8-97c4-c56b99175da0" sshConfig="criait_yangdf@BSCC-N42A14P@123.57.18.110:2222 agent" authAgent="true">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
