@@ -107,11 +107,11 @@ class OAuthConfig(BaseModel):
     wechat_qr_auth_url: HttpUrl = "https://open.weixin.qq.com/connect/qrconnect"
     wechat_token_url: HttpUrl = "https://api.weixin.qq.com/sns/oauth2/access_token"
 
-    # @model_validator(mode="after")
-    # def ensure_wechat_appid(self) -> "OAuthConfig":
-    #     if not self.wechat_app_id:
-    #         raise ValueError("WECHAT_APP_ID 未配置，微信扫码登录会直接返回 errcode=41002")
-    #     return self
+    @model_validator(mode="after")
+    def ensure_wechat_appid(self) -> "OAuthConfig":
+        if not self.wechat_app_id:
+            raise ValueError("WECHAT_APP_ID 未配置，微信扫码登录会直接返回 errcode=41002")
+        return self
 
     @computed_field(return_type=bool)
     def wechat_enabled(self) -> bool:
@@ -143,7 +143,7 @@ class Settings(BaseSettings):
     plugins_dir: List[Path] = Field(default_factory=lambda: [get_root() / "backend/plugins"])
 
     @computed_field(return_type=dict)
-    def uvicorn_options(self) -> dict:
+    def uvicorn_options(self) -> dict[str, Any]:
         return {
             "host": self.host,
             "port": self.port,
