@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>ProVR</title>
+    <link rel="stylesheet" href="../static/css/index.css" type="text/css"/>
+    <script type="module" src="../static/js/three.module.js"></script>
+    <script type="module" src="../static/js/libs/fflate.module.js"></script>
+    <script type="module" src="../static/js/curves/NURBSUtils.js"></script>
+    <script type="module" src="../static/js/curves/NURBSCurve.js"></script>
+    <script type="module" src="../static/js/utils/BufferGeometryUtils.js"></script>
+    <script type="module" src="../static/js/loaders/GLTFLoader.js"></script>
+    <script type="module" src="../static/js/loaders/FBXLoader.js"></script>
+
+    <script type="module" src="../static/js/controls/OrbitControls.js"></script>
+    <script type="module" src="../static/js/libs/motion-controllers.module.js"></script>
+    <script type="module" src="../static/js/webxr/VRButton.js"></script>
+    <script type="module" src="../static/js/webxr/XRControllerModelFactory.js"></script>
+    <script type="module" src="../static/js/webxr/XRHandMeshModel.js"></script>
+    <script type="module" src="../static/js/webxr/OculusHandModel.js"></script>
+    <script type="module" src="../static/js/webxr/OculusHandPointerModel.js"></script>
+
+    <script type="text/javascript" src="../static/libs/web3D/extension.js"></script>
+    <script type="text/javascript" src="../static/libs/web3D/math.js"></script>
+    <script type="module" src="../static/libs/web3D/w3m.js"></script>
+    <script type="module" src="../static/libs/web3D/static.js"></script>
+
+    <script type="module" src="../static/libs/core.js"></script>
+    <script type="module" src="../static/libs/interface.js"></script>
+    <script type="module" src="../static/libs/menu.js"></script>
+    <script type="module" src="../static/libs/tool.js"></script>
+    <script type="module" src="../static/libs/loader.js"></script>
+    <script type="module" src="../static/libs/gamepad.js"></script>
+    <script type="module" src="../static/libs/render.js"></script>
+
+    <script type="module" src="../static/libs/drawer.js"></script>
+    <script type="module" src="../static/libs/painter.js"></script>
+    <script type="module" src="../static/libs/design.js"></script>
+    <script type="module" src="../static/libs/controller.js"></script>
+    <script type="text/javascript" src="../static/libs/surface.js"></script>
+</head>
+<body>
+<div id="container"></div>
+<!--<div id="searchDiv" class="panel">-->
+<!--    <a class="input-file input-fileup">-->
+<!--        上传文件<input size="100" type="file" name="file" id="upload_button">-->
+<!--    </a>-->
+<!--</div>-->
+<!--<div id="SideToolbar" class="panel">-->
+<!--    &lt;!&ndash;    <LABEL onclick="switchMenu('Docking')">Docking</LABEL>&ndash;&gt;-->
+<!--    <div class="subMenu" id="DockingMenu">-->
+<!--        <button name="" id="DockingButton" value="">Docking</button>-->
+<!--    </div>-->
+<!--    <input name="mode" id="showWater" type="checkbox" title="Show Water"/>-->
+<!--    <label class="label" for="showWater">show Water</label>-->
+<!--</div>-->
+
+<!--<div id="DockingTab">-->
+<!--    <div id="DockingTabHeader">-->
+<!--        <span id="CloseDockingTab" class="closeClass">x</span>-->
+<!--    </div>-->
+<!--    <div id="DockingInnerTab">-->
+<!--        <ul class="DockingUl">-->
+<!--            <li>-->
+<!--                <label for="DockingTool">Docking</label>-->
+<!--                <select id="DockingTool">-->
+<!--                </select>-->
+<!--            </li>-->
+<!--            <li>-->
+<!--                <label for="Receptor">Receptor</label>-->
+<!--                <select id="Receptor">-->
+<!--                </select>-->
+<!--            </li>-->
+<!--            <li>-->
+<!--                <label for="Ligand">Ligand</label>-->
+<!--                <select id="Ligand">-->
+<!--                </select>-->
+<!--            </li>-->
+<!--            <li>-->
+<!--                <button id="DockingSubmit">submit</button>-->
+<!--            </li>-->
+<!--        </ul>-->
+<!--    </div>-->
+<!--</div>-->
+
+<div id="segmentHolder"></div>
+<script type="module" src="../static/libs/index.js"></script>
+<div id="loading-overlay" style="display: none;">
+    <div class="spinner"></div>
+</div>
+
+<style>
+    #loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.8);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .spinner {
+        width: 60px;
+        height: 60px;
+        border: 6px solid #ccc;
+        border-top-color: #007bff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+</style>
+</body>
+</html>

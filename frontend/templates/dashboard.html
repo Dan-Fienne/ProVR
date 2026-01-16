@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PDB Manager • Dashboard</title>
+<style>
+    :root {
+        --brand: #6366f1;
+        --bg: #f7f9fc;
+        --card: #fff;
+        --gray: #6b7280
+    }
+
+    * {
+        box-sizing: border-box
+    }
+
+    body {
+        margin: 0;
+        font-family: -apple-system, system-ui, Roboto, sans-serif;
+        background: var(--bg);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column
+    }
+
+    header {
+        background: #fff;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, .05);
+        padding: .9rem 1.2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center
+    }
+
+    h1 {
+        font-size: 1.25rem;
+        margin: 0;
+        color: var(--brand)
+    }
+
+    #logout {
+        background: var(--brand);
+        color: #fff;
+        border: none;
+        padding: .45rem .9rem;
+        border-radius: .5rem;
+        cursor: pointer
+    }
+
+    #logout:hover {
+        opacity: .92
+    }
+
+    main {
+        flex: 1;
+        max-width: 960px;
+        width: 100%;
+        margin: 1.5rem auto;
+        display: grid;
+        grid-template-columns:1fr 1fr;
+        gap: 1.5rem;
+        padding: 0 1rem
+    }
+
+    @media (max-width: 720px) {
+        main {
+            grid-template-columns:1fr
+        }
+    }
+
+    .card {
+        background: var(--card);
+        border-radius: 1rem;
+        padding: 1.5rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, .06);
+        animation: rise .5s
+    }
+
+    .card h2 {
+        margin: 0 0 1rem;
+        font-size: 1.1rem
+    }
+
+    input[type=file] {
+        width: 100%;
+        padding: .9rem;
+        border: 2px dashed #cfd8e3;
+        border-radius: .8rem;
+        background: #fafbff;
+        font-size: .95rem;
+        cursor: pointer
+    }
+
+    input[type=file]:hover {
+        border-color: var(--brand)
+    }
+
+    button.upload {
+        width: 100%;
+        margin-top: 1rem;
+        padding: .75rem;
+        border: none;
+        border-radius: .8rem;
+        background: var(--brand);
+        color: #fff;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer
+    }
+
+    button.upload:hover {
+        transform: translateY(-1px)
+    }
+
+    ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        max-height: 60vh;
+        overflow: auto
+    }
+
+    li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #f0f0f0;
+        padding: .55rem .1rem;
+        font-size: .95rem
+    }
+
+    li:last-child {
+        border: none
+    }
+
+    li a {
+        color: var(--brand);
+        text-decoration: none;
+        word-break: break-all;
+        flex: 1
+    }
+
+    li span {
+        font-size: .8rem;
+        color: var(--gray);
+        margin-left: .6rem
+    }
+
+    button.del {
+        background: none;
+        border: none;
+        color: #d33;
+        cursor: pointer;
+        font-size: .9rem;
+        margin-left: .6rem
+    }
+
+    button.del:hover {
+        opacity: .75
+    }
+
+    #msg {
+        margin-top: .7rem;
+        font-size: .9rem
+    }
+
+    @keyframes rise {
+        from {
+            opacity: 0;
+            transform: translateY(12px)
+        }
+        to {
+            opacity: 1;
+            transform: none
+        }
+    }
+</style>
+<header><h1>PDB Manager</h1>
+    <button id="logout">退出登录</button>
+</header>
+
+<script>
+    // 同步回调 token，并做登录守卫
+    (function syncTokenAndGuard() {
+        const m = location.hash.match(/access_token=([^&]+)/) || location.search.match(/[?&]access_token=([^&]+)/);
+        if (m) {
+            try {
+                localStorage.token = decodeURIComponent(m[1]);
+                history.replaceState(null, "", location.pathname);
+            } catch (e) {
+            }
+        }
+        if (!localStorage.token) {
+            location.href = "/?next=" + encodeURIComponent(location.pathname);
+        }
+    })();
+</script>
+
+<main>
+    <section class="card">
+        <h2>上传新的 PDB 文件</h2>
+        <form id="uploadForm"><input id="fileInput" type="file" accept=".pdb" required>
+            <button class="upload">上传</button>
+            <div id="msg"></div>
+        </form>
+    </section>
+    <section class="card">
+        <h2>我的文件</h2>
+        <ul id="fileList">
+            <li>加载中…</li>
+        </ul>
+    </section>
+</main>
+<script>
+    if (!localStorage.token) location.href = "/";
+    const hdr = {"Authorization": "Bearer " + localStorage.token};
+
+    function parseJwt(t) {
+        return JSON.parse(atob(t.split('.')[1]));
+    }
+
+    let uid = "me";
+    try {
+        uid = parseJwt(localStorage.token).uid;
+    } catch (e) {
+        uid = "me";
+    }
+    const list = document.getElementById("fileList"), msg = document.getElementById("msg");
+
+    async function load() {
+        const r = await fetch("/api/my-files", {headers: hdr});
+        if (!r.ok) {
+            localStorage.removeItem("token");
+            location.href = "/";
+            return
+        }
+        const a = await r.json();
+        if (!a.length) {
+            list.innerHTML = "<li><span>暂无文件</span></li>";
+            return
+        }
+        list.innerHTML = "";
+        a.forEach(f => {
+            const li = document.createElement("li");
+            li.innerHTML = `<a href="/user-files/${uid}/${encodeURIComponent(f)}" target="_blank">${f}</a>
+                  <button class="del" title="删除" data-f="${encodeURIComponent(f)}">🗑</button>`;
+            list.appendChild(li);
+        });
+        list.querySelectorAll("button.del").forEach(btn => {
+            btn.onclick = async e => {
+                const fn = decodeURIComponent(e.target.dataset.f);
+                if (!confirm("确定删除 '" + fn + "' ?")) return;
+                const res = await fetch("/api/delete-pdb?filename=" + encodeURIComponent(fn),
+                    {method: "DELETE", headers: hdr});
+                if (res.ok) {
+                    load();
+                } else {
+                    alert("删除失败: " + (await res.json()).detail);
+                }
+            };
+        });
+    }
+
+    load();
+    document.getElementById("uploadForm").onsubmit = async e => {
+        e.preventDefault();
+        msg.style.color = "";
+        msg.textContent = "上传中…";
+        const fd = new FormData();
+        fd.append("file", fileInput.files[0]);
+        const r = await fetch("/api/upload-pdb", {method: "POST", body: fd, headers: hdr});
+        const j = await r.json();
+        if (!r.ok) {
+            msg.style.color = "#d33";
+            msg.textContent = j.detail;
+            return
+        }
+        msg.style.color = "green";
+        msg.textContent = "上传成功！";
+        fileInput.value = "";
+        load();
+    };
+    logout.onclick = () => {
+        localStorage.removeItem("token");
+        location.href = "/";
+    }
+</script>
+</html>

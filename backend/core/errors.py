@@ -7,9 +7,12 @@ from fastapi.responses import JSONResponse
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
+from backend.core.log import get_logger
+
+logger = get_logger(__name__)
+
 
 class AppError(RuntimeError):
-
     def __init__(self, message: str, *, code: str = "APP_ERROR", status_code: int = 400):
         super().__init__(message)
         self.code = code
@@ -27,6 +30,7 @@ def _app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 
 def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled exception", extra={"path": str(request.url.path)})
     payload = ErrorPayload(code="INTERNAL_ERROR", message="Internal server error")
     return JSONResponse(status_code=500, content={"error": payload.model_dump()})
 

@@ -8,6 +8,14 @@ from sqlalchemy.orm import Session
 from backend.adapters.db import models
 
 
+def _commit(db: Session) -> None:
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 def get_user_by_id(db: Session, user_id: int) -> Optional[models.User]:
     return db.query(models.User).filter(models.User.id == user_id).first()
 
@@ -19,7 +27,7 @@ def get_user_by_username(db: Session, username: str) -> Optional[models.User]:
 def create_user(db: Session, username: str, password_hash: str) -> models.User:
     user = models.User(username=username, password=password_hash)
     db.add(user)
-    db.commit()
+    _commit(db)
     db.refresh(user)
     return user
 
@@ -38,63 +46,75 @@ def get_provider_link(db: Session, provider: str, provider_uid: str) -> Optional
 def link_provider(db: Session, user_id: int, provider: str, provider_uid: str) -> models.UserProvider:
     link = models.UserProvider(user_id=user_id, provider=provider, provider_uid=provider_uid)
     db.add(link)
-    db.commit()
+    _commit(db)
     db.refresh(link)
     return link
 
 
-def list_user_files(db: Session, user_id: int) -> Sequence[models.PDBFile]:
+def list_user_files(db: Session, user_id: int) -> Sequence[models.UserFile]:
     return (
-        db.query(models.PDBFile)
-        .filter(models.PDBFile.user_id == user_id)
-        .order_by(models.PDBFile.uploaded.desc(), models.PDBFile.id.desc())
+        db.query(models.UserFile)
+        .filter(models.UserFile.user_id == user_id)
+        .order_by(models.UserFile.uploaded_at.desc(), models.UserFile.id.desc())
         .all()
     )
 
 
 def add_user_file(
-        db: Session,
-        user_id: int,
-        filename: str,
-        content: bytes,
-        content_type: str | None,
-) -> models.PDBFile:
-    rec = models.PDBFile(
+    db: Session,
+    user_id: int,
+    *,
+    original_filename: str,
+    file_kind: Optional[str],
+    storage_backend: str,
+    storage_path: str,
+    size: int,
+    content_type: Optional[str],
+    checksum_sha256: Optional[str],
+) -> models.UserFile:
+    rec = models.UserFile(
         user_id=user_id,
-        filename=filename,
-        content=content,
-        size=len(content),
+        original_filename=original_filename,
+        file_kind=file_kind,
+        storage_backend=storage_backend,
+        storage_path=storage_path,
+        size=size,
         content_type=content_type,
+        checksum_sha256=checksum_sha256,
     )
     db.add(rec)
-    db.commit()
+    _commit(db)
     db.refresh(rec)
     return rec
 
 
-def get_user_file_by_id(db: Session, user_id: int, file_id: int) -> Optional[models.PDBFile]:
+def get_user_file_by_id(db: Session, user_id: int, file_id: int) -> Optional[models.UserFile]:
     return (
-        db.query(models.PDBFile)
-        .filter(models.PDBFile.user_id == user_id, models.PDBFile.id == file_id)
+        db.query(models.UserFile)
+        .filter(models.UserFile.user_id == user_id, models.UserFile.id == file_id)
         .first()
     )
 
 
-def get_latest_user_file_by_name(db: Session, user_id: int, filename: str) -> Optional[models.PDBFile]:
+def get_latest_user_file_by_name(db: Session, user_id: int, filename: str) -> Optional[models.UserFile]:
     return (
-        db.query(models.PDBFile)
-        .filter(models.PDBFile.user_id == user_id, models.PDBFile.filename == filename)
-        .order_by(models.PDBFile.uploaded.desc(), models.PDBFile.id.desc())
+        db.query(models.UserFile)
+        .filter(models.UserFile.user_id == user_id, models.UserFile.original_filename == filename)
+        .order_by(models.UserFile.uploaded_at.desc(), models.UserFile.id.desc())
         .first()
     )
+
+
+def delete_user_file(db: Session, rec: models.UserFile) -> None:
+    db.delete(rec)
+    _commit(db)
 
 
 def delete_user_file_by_id(db: Session, user_id: int, file_id: int) -> bool:
     rec = get_user_file_by_id(db, user_id, file_id)
     if not rec:
         return False
-    db.delete(rec)
-    db.commit()
+    delete_user_file(db, rec)
     return True
 
 
@@ -102,6 +122,5 @@ def delete_latest_user_file_by_name(db: Session, user_id: int, filename: str) ->
     rec = get_latest_user_file_by_name(db, user_id, filename)
     if not rec:
         return False
-    db.delete(rec)
-    db.commit()
+    delete_user_file(db, rec)
     return True

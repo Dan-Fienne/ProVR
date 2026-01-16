@@ -69,6 +69,7 @@ def lifespan(
                 await _maybe_await(hook, app, settings, resources)
 
             app.state.resources = resources
+            app.state.settings = settings
 
             startup_ms = int((time.monotonic() - t0) * 1000)
             logger.info("Application started", extra={"env": env, "startup_ms": startup_ms})
