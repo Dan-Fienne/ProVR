@@ -1,5 +1,6 @@
-import {detectChainType} from '../protein/ProteinConstants.js';
-import {SSEType} from '../protein/ProteinConstants.js';
+import {RecordType, SSEType} from '../protein/ProteinConstants.js';
+import {classifyResidue} from '../protein/StructureClassifier.js'
+
 
 function col(line, start, end) {
     return line.slice(start - 1, end).trim();
@@ -36,9 +37,18 @@ function inRange(label, start, end) {
     return compareLabel(label, start) >= 0 && compareLabel(label, end) <= 0;
 }
 
+function normalizedAltLoc(altLoc) {
+    const key = String(altLoc || '').trim().toUpperCase();
+    return key === '.' || key === '?' ? '' : key;
+}
+
 export class PDBParser {
-    parse(text, proteinId, proteinSystem) {
+    parse(text, proteinId, proteinSystem, {replace = true} = {}) {
+        if (replace && proteinSystem.getProtein(proteinId)) {
+            proteinSystem.removeByProtein(proteinId);
+        }
         const model = proteinSystem.createProtein(proteinId);
+        model.info.format = 'pdb';
 
         const helixRanges = [];
         const sheetRanges = [];
@@ -47,19 +57,19 @@ export class PDBParser {
         for (const line of lines) {
             const rec = col(line, 1, 6).toUpperCase();
 
-            if (rec === 'HEADER') {
+            if (rec === RecordType.HEADER) {
                 model.info.classification = col(line, 11, 50);
                 const pdbId = col(line, 63, 66).toUpperCase();
                 if (pdbId) model.info.pdbId = pdbId;
                 continue;
             }
 
-            if (rec === 'ATOM' || rec === 'HETATM') {
+            if (rec === RecordType.ATOM || rec === RecordType.HETATM) {
                 const atomSerial = intCol(line, 7, 11);
                 if (atomSerial == null) continue;
 
                 const atomName = col(line, 13, 16);
-                const altLoc = col(line, 17, 17).toUpperCase();
+                const altLoc = normalizedAltLoc(col(line, 17, 17));
                 if (altLoc && altLoc !== 'A') continue;
 
                 const resName = col(line, 18, 20).toUpperCase() || 'UNK';
@@ -74,31 +84,34 @@ export class PDBParser {
 
                 const occupancy = floatCol(line, 55, 60, 1.0);
                 const bFactor = floatCol(line, 61, 66, 0.0);
-                const element = (col(line, 77, 78) || atomName[0] || 'X').toUpperCase();
+                const element = (col(line, 77, 78) || atomName.replace(/[^A-Za-z]/g, '')[0] || 'X').toUpperCase();
 
-                const chainType = rec === 'HETATM' ? 'HET' : detectChainType(resName);
+                const classification = classifyResidue({recordType: rec, resName});
                 const residue = model.addResidue({
                     chainId,
                     seqNum,
                     insCode,
                     name: resName,
-                    chainType
+                    ...classification,
                 });
 
                 model.addAtom({
                     atomId: atomSerial,
+                    serial: atomSerial,
                     atomName,
                     element,
                     x, y, z,
                     occupancy,
                     bFactor,
-                    residueId: residue.id
+                    residueId: residue.id,
+                    recordType: rec,
+                    altLoc,
                 });
 
                 continue;
             }
 
-            if (rec === 'CONECT') {
+            if (rec === RecordType.CONNECT) {
                 const a = intCol(line, 7, 11);
                 if (a == null) continue;
                 const others = [
@@ -115,7 +128,7 @@ export class PDBParser {
                 continue;
             }
 
-            if (rec === 'HELIX') {
+            if (rec === RecordType.HELIX) {
                 const chainId = col(line, 20, 20) || 'X';
                 const startSeq = intCol(line, 22, 25);
                 const startIns = col(line, 26, 26);
@@ -131,7 +144,7 @@ export class PDBParser {
                 continue;
             }
 
-            if (rec === 'SHEET') {
+            if (rec === RecordType.SHEET) {
                 const chainId = col(line, 22, 22) || 'X';
                 const startSeq = intCol(line, 23, 26);
                 const startIns = col(line, 27, 27);
@@ -147,40 +160,43 @@ export class PDBParser {
             }
         }
 
-        for (const residue of model.residues.values()) {
-            residue.sse = SSEType.LOOP;
-            model.secondary.setResidueSSE(residue.id, SSEType.LOOP);
-        }
-
-        for (const r of helixRanges) {
-            const chain = model.chains.get(r.chainId);
-            if (!chain) continue;
-            for (const rid of chain.residueIds) {
-                const res = model.residues.get(rid);
-                if (!res) continue;
-                if (inRange(res.label, r.start, r.end)) {
-                    res.sse = SSEType.HELIX;
-                    model.secondary.setResidueSSE(res.id, SSEType.HELIX);
-                }
-            }
-            model.secondary.addRange(r.chainId, r.start, r.end, SSEType.HELIX);
-        }
-
-        for (const r of sheetRanges) {
-            const chain = model.chains.get(r.chainId);
-            if (!chain) continue;
-            for (const rid of chain.residueIds) {
-                const res = model.residues.get(rid);
-                if (!res) continue;
-                if (inRange(res.label, r.start, r.end)) {
-                    res.sse = SSEType.SHEET;
-                    model.secondary.setResidueSSE(res.id, SSEType.SHEET);
-                }
-            }
-            model.secondary.addRange(r.chainId, r.start, r.end, SSEType.SHEET);
-        }
-
+        applySecondaryStructure(model, helixRanges, sheetRanges);
         model.bumpRevision();
         return model;
+    }
+}
+
+export function applySecondaryStructure(model, helixRanges = [], sheetRanges = []) {
+    for (const residue of model.residues.values()) {
+        residue.sse = SSEType.LOOP;
+        model.secondary.setResidueSSE(residue.id, SSEType.LOOP);
+    }
+
+    for (const r of helixRanges) {
+        const chain = model.chains.get(r.chainId);
+        if (!chain) continue;
+        for (const rid of chain.residueIds) {
+            const res = model.residues.get(rid);
+            if (!res || !res.isProtein) continue;
+            if (inRange(res.label, r.start, r.end)) {
+                res.sse = SSEType.HELIX;
+                model.secondary.setResidueSSE(res.id, SSEType.HELIX);
+            }
+        }
+        model.secondary.addRange(r.chainId, r.start, r.end, SSEType.HELIX);
+    }
+
+    for (const r of sheetRanges) {
+        const chain = model.chains.get(r.chainId);
+        if (!chain) continue;
+        for (const rid of chain.residueIds) {
+            const res = model.residues.get(rid);
+            if (!res || !res.isProtein) continue;
+            if (inRange(res.label, r.start, r.end)) {
+                res.sse = SSEType.SHEET;
+                model.secondary.setResidueSSE(res.id, SSEType.SHEET);
+            }
+        }
+        model.secondary.addRange(r.chainId, r.start, r.end, SSEType.SHEET);
     }
 }

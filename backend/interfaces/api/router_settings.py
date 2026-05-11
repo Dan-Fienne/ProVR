@@ -16,7 +16,6 @@ router_sets: Iterable[RouterImport] = [
     ("backend.interfaces.api.routers.auth", "router"),
     ("backend.interfaces.api.routers.files", "router"),
     ("backend.interfaces.api.routers.pages", "router"),
-    ("backend.interfaces.api.routers.docking", "router"),
 ]
 
 

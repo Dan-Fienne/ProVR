@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 
 from backend.core.settings import Settings, get_settings
 from backend.adapters.db.session import get_session
-from backend.domain.services import auth as auth_svc
-from backend.domain.services import oauth as oauth_svc
+from backend.domain import auth as auth_svc
+from backend.domain import oauth as oauth_svc
 
 router = APIRouter(tags=["auth"])
 

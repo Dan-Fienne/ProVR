@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import HTTPException
 from jose import jwt, JWTError
-from passlib.hash import bcrypt
+import bcrypt
 from sqlalchemy.orm import Session
 
 from backend.core.settings import Settings
