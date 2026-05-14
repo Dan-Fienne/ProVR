@@ -1,4 +1,4 @@
-import * as THREE from '../../libs/three.webgpu.js';
+import * as THREE from '../../libs/three.module.js';
 
 function domElementFromViewport(viewport) {
     return viewport?.renderer?.domElement || viewport?.domElement || viewport?.container || null;

@@ -1,4 +1,4 @@
-import * as THREE from "../../libs/three.webgpu.js";
+import * as THREE from "../../libs/three.module.js";
 
 import {SSEType} from "../../domain/protein/ProteinConstants.js";
 

@@ -1,4 +1,4 @@
-import * as THREE from '../../libs/three.webgpu.js';
+import * as THREE from '../../libs/three.module.js';
 
 function defaultAcceptAtom(atom, residue, _model) {
     if (!atom || !residue) return false;

@@ -1,4 +1,4 @@
-import * as THREE from "../../libs/three.webgpu.js";
+import * as THREE from "../../libs/three.module.js";
 
 function v3(a, fallback = [0, 0, 0]) {
     const p = a || fallback;

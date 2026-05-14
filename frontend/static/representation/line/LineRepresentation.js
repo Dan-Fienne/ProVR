@@ -1,4 +1,4 @@
-import * as THREE from '../../libs/three.webgpu.js';
+import * as THREE from '../../libs/three.module.js';
 import {RepresentationBase} from '../common/RepresentationBase.js';
 import {createStructureFilter} from '../../domain/protein/StructureFilter.js';
 import {buildBondTopology, getBondTopologyRecords} from '../geometry/BondTopologyBuilder.js';

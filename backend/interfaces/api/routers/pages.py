@@ -16,7 +16,7 @@ templates = Jinja2Templates(directory=settings.templates_dir)
 
 @router.get("/", response_class=HTMLResponse)
 def page_index(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("validate_surface.html", {"request": request})
+    return templates.TemplateResponse("vr.html", {"request": request})
 
 
 @router.get("/render", response_class=HTMLResponse)

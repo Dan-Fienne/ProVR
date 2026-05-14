@@ -1,4 +1,4 @@
-import * as THREE from "../../libs/three.webgpu.js";
+import * as THREE from "../../libs/three.module.js";
 
 function pushVec3(out, v) {
     out.push(v.x, v.y, v.z);

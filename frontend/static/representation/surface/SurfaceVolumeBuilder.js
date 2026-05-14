@@ -1,4 +1,4 @@
-import * as THREE from '../../libs/three.webgpu.js';
+import * as THREE from '../../libs/three.module.js';
 
 const CORNERS = Object.freeze([
     [0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],

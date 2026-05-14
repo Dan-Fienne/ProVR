@@ -1,4 +1,4 @@
-import * as THREE from '../../libs/three.webgpu.js';
+import * as THREE from '../../libs/three.module.js';
 import {EventTypes} from '../../core/event/EventTypes.js';
 import {TransformAtomSetCommand} from '../../core/command/TransformAtomSetCommand.js';
 import {applyPositionMap, clonePositionMap, maxDisplacement, snapshotAtomPositions, translateSnapshot} from './CoordinateSnapshot.js';

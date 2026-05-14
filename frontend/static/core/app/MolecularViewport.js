@@ -1,4 +1,4 @@
-import * as THREE from '../../libs/three.webgpu.js';
+import * as THREE from '../../libs/three.module.js';
 import {OrbitControls} from '../../libs/controls/OrbitControls.js';
 
 export class MolecularViewport {
@@ -38,15 +38,11 @@ export class MolecularViewport {
         this.camera = new THREE.PerspectiveCamera(55, width / height, 0.01, 100000);
         this.camera.position.set(this.cameraPosition[0], this.cameraPosition[1], this.cameraPosition[2]);
 
-        this.renderer = new THREE.WebGPURenderer({antialias: this.antialias});
+        this.renderer = new THREE.WebGLRenderer({antialias: this.antialias});
         this.renderer.setPixelRatio(window.devicePixelRatio || 1);
         this.renderer.setSize(width, height);
         if ('outputColorSpace' in this.renderer && THREE.SRGBColorSpace) {
             this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-        }
-
-        if (typeof this.renderer.init === 'function') {
-            await this.renderer.init();
         }
 
         this.container.appendChild(this.renderer.domElement);

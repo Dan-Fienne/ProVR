@@ -1,122 +1,348 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <title>ProVR</title>
-    <link rel="stylesheet" href="../static/css/index.css" type="text/css"/>
-    <script type="module" src="../static/js/three.module.js"></script>
-    <script type="module" src="../static/js/libs/fflate.module.js"></script>
-    <script type="module" src="../static/js/curves/NURBSUtils.js"></script>
-    <script type="module" src="../static/js/curves/NURBSCurve.js"></script>
-    <script type="module" src="../static/js/utils/BufferGeometryUtils.js"></script>
-    <script type="module" src="../static/js/loaders/GLTFLoader.js"></script>
-    <script type="module" src="../static/js/loaders/FBXLoader.js"></script>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>ProVR Spatial Design Studio</title>
+    <style>
+        :root {
+            --bg0: #05070d;
+            --bg1: #0b1020;
+            --glass: rgba(255, 255, 255, .12);
+            --glass-strong: rgba(255, 255, 255, .18);
+            --stroke: rgba(255, 255, 255, .22);
+            --text: #f8fafc;
+            --muted: #a7b0c5;
+            --blue: #60a5fa;
+            --indigo: #818cf8;
+            --green: #34d399;
+            --orange: #fb923c;
+            --red: #fb7185;
+        }
 
-    <script type="module" src="../static/js/controls/OrbitControls.js"></script>
-    <script type="module" src="../static/js/libs/motion-controllers.module.js"></script>
-    <script type="module" src="../static/js/webxr/VRButton.js"></script>
-    <script type="module" src="../static/js/webxr/XRControllerModelFactory.js"></script>
-    <script type="module" src="../static/js/webxr/XRHandMeshModel.js"></script>
-    <script type="module" src="../static/js/webxr/OculusHandModel.js"></script>
-    <script type="module" src="../static/js/webxr/OculusHandPointerModel.js"></script>
+        * {
+            box-sizing: border-box;
+        }
 
-    <script type="text/javascript" src="../static/libs/web3D/extension.js"></script>
-    <script type="text/javascript" src="../static/libs/web3D/math.js"></script>
-    <script type="module" src="../static/libs/web3D/w3m.js"></script>
-    <script type="module" src="../static/libs/web3D/static.js"></script>
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+            color: var(--text);
+            background: radial-gradient(circle at 20% 10%, #203057 0, #0b1020 42%, #05070d 100%);
+        }
 
-    <script type="module" src="../static/libs/core.js"></script>
-    <script type="module" src="../static/libs/interface.js"></script>
-    <script type="module" src="../static/libs/menu.js"></script>
-    <script type="module" src="../static/libs/tool.js"></script>
-    <script type="module" src="../static/libs/loader.js"></script>
-    <script type="module" src="../static/libs/gamepad.js"></script>
-    <script type="module" src="../static/libs/render.js"></script>
+        #app {
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns:390px 1fr;
+        }
 
-    <script type="module" src="../static/libs/drawer.js"></script>
-    <script type="module" src="../static/libs/painter.js"></script>
-    <script type="module" src="../static/libs/design.js"></script>
-    <script type="module" src="../static/libs/controller.js"></script>
-    <script type="text/javascript" src="../static/libs/surface.js"></script>
+        #sidebar {
+            position: relative;
+            z-index: 3;
+            padding: 18px;
+            overflow: auto;
+            border-right: 1px solid var(--stroke);
+            backdrop-filter: blur(36px) saturate(170%);
+            background: linear-gradient(180deg, rgba(255, 255, 255, .13), rgba(255, 255, 255, .07));
+            box-shadow: 24px 0 80px rgba(0, 0, 0, .34);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .brand h1 {
+            margin: 0;
+            font-size: 20px;
+            letter-spacing: .2px;
+        }
+
+        .brand small {
+            display: block;
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .pill {
+            padding: 7px 10px;
+            border-radius: 999px;
+            background: rgba(96, 165, 250, .16);
+            color: #bfdbfe;
+            border: 1px solid rgba(147, 197, 253, .28);
+            font-size: 12px;
+        }
+
+        .card {
+            border: 1px solid var(--stroke);
+            border-radius: 22px;
+            padding: 14px;
+            margin: 12px 0;
+            background: rgba(255, 255, 255, .09);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255, 255, 255, .12);
+        }
+
+        .card h2 {
+            margin: 0 0 10px;
+            font-size: 13px;
+            letter-spacing: .12em;
+            color: #dbeafe;
+            text-transform: uppercase;
+        }
+
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        input, select, button, textarea {
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, .18);
+            border-radius: 14px;
+            background: rgba(2, 6, 23, .52);
+            color: var(--text);
+            padding: 10px 12px;
+            outline: none;
+            font: inherit;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            border-color: rgba(129, 140, 248, .9);
+            box-shadow: 0 0 0 4px rgba(129, 140, 248, .17);
+        }
+
+        button {
+            cursor: pointer;
+            font-weight: 650;
+            background: linear-gradient(180deg, rgba(129, 140, 248, .92), rgba(79, 70, 229, .88));
+            border-color: rgba(199, 210, 254, .28);
+            transition: transform .18s ease, filter .18s ease, background .18s ease;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.06);
+        }
+
+        button.secondary {
+            background: rgba(255, 255, 255, .10);
+            color: #e5e7eb;
+        }
+
+        button.danger {
+            background: rgba(244, 63, 94, .72);
+        }
+
+        button.active {
+            background: linear-gradient(180deg, rgba(52, 211, 153, .95), rgba(16, 185, 129, .86));
+            color: #042f2e;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns:1fr 1fr;
+            gap: 8px;
+        }
+
+        .row3 {
+            display: grid;
+            grid-template-columns:1fr 1fr 1fr;
+            gap: 8px;
+        }
+
+        #viewport {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            min-width: 0;
+        }
+
+        #status {
+            white-space: pre-wrap;
+            min-height: 48px;
+            padding: 12px;
+            border-radius: 16px;
+            border: 1px solid rgba(96, 165, 250, .28);
+            background: rgba(15, 23, 42, .7);
+            color: #dbeafe;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        #summary {
+            max-height: 240px;
+            overflow: auto;
+            white-space: pre-wrap;
+            padding: 12px;
+            border-radius: 16px;
+            background: rgba(2, 6, 23, .70);
+            border: 1px solid rgba(255, 255, 255, .12);
+            color: #cbd5e1;
+            font-size: 11px;
+            line-height: 1.5;
+        }
+
+        .hint {
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        .floating-title {
+            position: absolute;
+            right: 22px;
+            top: 18px;
+            z-index: 2;
+            padding: 12px 14px;
+            border: 1px solid rgba(255, 255, 255, .18);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, .11);
+            backdrop-filter: blur(22px) saturate(160%);
+            color: #e2e8f0;
+            box-shadow: 0 18px 60px rgba(0, 0, 0, .26);
+            pointer-events: none;
+        }
+
+        .floating-title b {
+            display: block;
+            font-size: 14px;
+        }
+
+        .floating-title span {
+            display: block;
+            margin-top: 2px;
+            color: #a7b0c5;
+            font-size: 12px;
+        }
+
+        @media (max-width: 900px) {
+            #app {
+                grid-template-columns:1fr;
+            }
+
+            #sidebar {
+                height: 42vh;
+                border-right: none;
+                border-bottom: 1px solid var(--stroke);
+            }
+        }
+    </style>
 </head>
 <body>
-<div id="container"></div>
-<!--<div id="searchDiv" class="panel">-->
-<!--    <a class="input-file input-fileup">-->
-<!--        上传文件<input size="100" type="file" name="file" id="upload_button">-->
-<!--    </a>-->
-<!--</div>-->
-<!--<div id="SideToolbar" class="panel">-->
-<!--    &lt;!&ndash;    <LABEL onclick="switchMenu('Docking')">Docking</LABEL>&ndash;&gt;-->
-<!--    <div class="subMenu" id="DockingMenu">-->
-<!--        <button name="" id="DockingButton" value="">Docking</button>-->
-<!--    </div>-->
-<!--    <input name="mode" id="showWater" type="checkbox" title="Show Water"/>-->
-<!--    <label class="label" for="showWater">show Water</label>-->
-<!--</div>-->
+<div id="app">
+    <aside id="sidebar">
+        <div class="brand">
+            <div><h1>ProVR Spatial Design Studio</h1><small>VR protein design operating system</small></div>
+            <div class="pill">WebXR</div>
+        </div>
 
-<!--<div id="DockingTab">-->
-<!--    <div id="DockingTabHeader">-->
-<!--        <span id="CloseDockingTab" class="closeClass">x</span>-->
-<!--    </div>-->
-<!--    <div id="DockingInnerTab">-->
-<!--        <ul class="DockingUl">-->
-<!--            <li>-->
-<!--                <label for="DockingTool">Docking</label>-->
-<!--                <select id="DockingTool">-->
-<!--                </select>-->
-<!--            </li>-->
-<!--            <li>-->
-<!--                <label for="Receptor">Receptor</label>-->
-<!--                <select id="Receptor">-->
-<!--                </select>-->
-<!--            </li>-->
-<!--            <li>-->
-<!--                <label for="Ligand">Ligand</label>-->
-<!--                <select id="Ligand">-->
-<!--                </select>-->
-<!--            </li>-->
-<!--            <li>-->
-<!--                <button id="DockingSubmit">submit</button>-->
-<!--            </li>-->
-<!--        </ul>-->
-<!--    </div>-->
-<!--</div>-->
+        <div id="status">Ready. Load a PDB / CIF / mmCIF file.</div>
 
-<div id="segmentHolder"></div>
-<script type="module" src="../static/libs/index.js"></script>
-<div id="loading-overlay" style="display: none;">
-    <div class="spinner"></div>
+        <section class="card">
+            <h2>Structure</h2>
+            <input id="structureFileInput" type="file" accept=".pdb,.ent,.cif,.mmcif,.mif"/>
+            <div class="row">
+                <button id="loadDemoButton" class="secondary">Load demo</button>
+                <button id="centerButton" class="secondary">Center</button>
+            </div>
+            <div class="row">
+                <button id="enterVRButton">Enter VR</button>
+                <button id="exportButton" class="secondary">Export PDB</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Representations</h2>
+            <div class="row3">
+                <button id="toggleBallStick" class="active">Ball</button>
+                <button id="toggleCartoon" class="secondary">Cartoon</button>
+                <button id="toggleLine" class="secondary">Line</button>
+            </div>
+            <div class="row">
+                <button id="toggleSurface" class="secondary">Surface</button>
+                <button id="rebuildRepsButton" class="secondary">Rebuild</button>
+            </div>
+            <label>Color scheme</label>
+            <select id="colorScheme">
+                <option value="element">Element</option>
+                <option value="chain" selected>Chain</option>
+                <option value="kind">Residue kind</option>
+                <option value="sse">SSE / Cartoon</option>
+            </select>
+        </section>
+
+        <section class="card">
+            <h2>VR Edit Scope</h2>
+            <select id="editScope">
+                <option value="atom">Atom</option>
+                <option value="residue" selected>Residue</option>
+                <option value="residueRange">Residue window</option>
+                <option value="chain">Chain</option>
+                <option value="protein">Whole protein</option>
+                <option value="surfaceInspect">Surface inspection layer</option>
+            </select>
+            <label>Residue window</label>
+            <input id="residueWindow" value="5"/>
+            <div class="row">
+                <button id="undoButton" class="secondary">Undo</button>
+                <button id="redoButton" class="secondary">Redo</button>
+            </div>
+            <p class="hint">VR: trigger selects/drags. Left panel buttons also appear as a small spatial glass console
+                in VR.</p>
+        </section>
+
+        <section class="card">
+            <h2>Surface Builder</h2>
+            <div class="row">
+                <input id="surfaceChain" placeholder="Chain, e.g. A"/>
+                <input id="surfaceRange" placeholder="Range, e.g. 10-60"/>
+            </div>
+            <div class="row">
+                <select id="surfaceColorMode">
+                    <option value="range">Range color</option>
+                    <option value="residue">Residue palette</option>
+                    <option value="atom">Atom color</option>
+                </select>
+                <input id="surfaceOpacity" value="0.46"/>
+            </div>
+            <div class="row">
+                <button id="surfaceFullButton" class="secondary">Full surface</button>
+                <button id="surfaceLayerButton" class="secondary">Chain / range</button>
+            </div>
+            <button id="surfaceResetButton" class="secondary">Reset surface transforms</button>
+        </section>
+
+        <section class="card">
+            <h2>Runtime Summary</h2>
+            <pre id="summary">{}</pre>
+        </section>
+    </aside>
+    <main id="viewport">
+        <div class="floating-title"><b>ProVR</b><span>Industrial VR protein design workspace</span></div>
+    </main>
 </div>
+<script type="module">
+    import {ProVRVROperatingSystem} from '../static/vr/ProVRVROperatingSystem.js';
 
-<style>
-    #loading-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(255, 255, 255, 0.8);
-        z-index: 9999;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .spinner {
-        width: 60px;
-        height: 60px;
-        border: 6px solid #ccc;
-        border-top-color: #007bff;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-        to {
-            transform: rotate(360deg);
-        }
-    }
-</style>
+    const app = new ProVRVROperatingSystem({
+        viewportSelector: '#viewport',
+        statusSelector: '#status',
+        summarySelector: '#summary',
+    });
+    await app.init();
+    window.provr = window.provr || {};
+    window.provr.vr = app;
+</script>
 </body>
 </html>
