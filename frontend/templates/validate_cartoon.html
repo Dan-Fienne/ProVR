@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8"/>
+    <title>ProVR Cartoon Loop/SSE Boundary + Fixed Sheet Arrow Validation</title>
+    <style>
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #111827;
+            color: #e5e7eb;
+        }
+
+        #app {
+            display: grid;
+            grid-template-columns: 470px 1fr;
+            width: 100%;
+            height: 100%;
+        }
+
+        #panel {
+            padding: 14px;
+            border-right: 1px solid #374151;
+            background: #0f172a;
+            overflow: auto;
+        }
+
+        #viewport {
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            cursor: crosshair;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            color: #cbd5e1;
+            margin-top: 10px;
+            margin-bottom: 4px;
+        }
+
+        button, input, select {
+            box-sizing: border-box;
+            width: 100%;
+            margin: 4px 0;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid #475569;
+            background: #1f2937;
+            color: #f9fafb;
+        }
+
+        button {
+            cursor: pointer;
+            background: #2563eb;
+            border-color: #3b82f6;
+            font-weight: 600;
+        }
+
+        button.secondary {
+            background: #374151;
+            border-color: #4b5563;
+        }
+
+        #status {
+            padding: 8px;
+            border-radius: 8px;
+            background: #1f2937;
+            margin-bottom: 10px;
+            font-size: 13px;
+            white-space: pre-wrap;
+        }
+
+        #status[data-kind="ok"] {
+            background: #064e3b;
+        }
+
+        #status[data-kind="warn"] {
+            background: #78350f;
+        }
+
+        #status[data-kind="error"] {
+            background: #7f1d1d;
+        }
+
+        pre {
+            background: #020617;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 10px;
+            overflow: auto;
+            max-height: 22vh;
+            font-size: 12px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+
+        .checkrow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 6px 0;
+            font-size: 13px;
+            color: #cbd5e1;
+        }
+
+        .checkrow input {
+            width: auto;
+        }
+
+        .hint {
+            margin: 4px 0 8px;
+            font-size: 12px;
+            color: #94a3b8;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <aside id="panel">
+        <h2>ProVR Cartoon Loop/SSE Boundary + Fixed Sheet Arrow</h2>
+        <div id="status">ready</div>
+
+        <label>Load PDB / CIF / mmCIF</label>
+        <input id="structureFileInput" type="file" accept=".pdb,.ent,.cif,.mmcif,.mif"/>
+        <button id="loadDemoButton" class="secondary">Load loop + direct SSE boundary demo PDB</button>
+
+        <label>Color scheme</label>
+        <select id="colorScheme">
+            <option value="chain" selected>Chain color, single chain = green</option>
+            <option value="sse">SSE color</option>
+            <option value="kind">Residue kind color</option>
+        </select>
+
+        <label>General</label>
+        <div class="row">
+            <input id="cartoonScale" value="1.0" title="scale"/>
+            <input id="cartoonOpacity" value="1.0" title="opacity"/>
+        </div>
+
+        <label>Legacy Hermite smoothing</label>
+        <div class="row">
+            <input id="smoothSegment" value="19" title="smoothSegment"/>
+            <input id="smoothCurvature" value="0.8" title="smoothCurvature"/>
+        </div>
+
+        <label>Loop tube</label>
+        <input id="loopRadius" value="0.18" title="loopRadius"/>
+
+        <label>Helix ellipse</label>
+        <div class="row">
+            <input id="helixEllipseRadius" value="0.21" title="helixEllipseRadius"/>
+            <input id="helixEllipseWidthMultiple" value="5.0" title="helixEllipseWidthMultiple"/>
+        </div>
+
+        <label>Beta sheet arrow: fixed shaft + terminal arrowhead</label>
+        <div class="row">
+            <input id="sheetBodyWidth" value="2.0" title="old geom_cube_width"/>
+            <input id="sheetThickness" value="0.4" title="old geom_cube_height"/>
+        </div>
+        <div class="row">
+            <input id="sheetArrowBaseWidth" value="3.6" title="old geom_arrowhead_lower"/>
+            <input id="sheetArrowTipWidth" value="0.4" title="old geom_arrowhead_upper"/>
+        </div>
+        <input id="sheetArrowHeight" value="0.4" title="old geom_arrow_height"/>
+        <p class="hint">Sheet has one canonical drawing method: zigzag-smoothed rectangular shaft plus terminal
+            arrowhead. No alternate sheet modes.</p>
+
+        <label>Loop-owned all-point spline</label>
+        <div class="row">
+            <input id="loopSplineSamplesPerResidue" value="19"
+                   title="loopSplineSamplesPerResidue: samples per anchor span"/>
+            <input id="loopSplineTangentScale" value="0.80"
+                   title="loopSplineTangentScale: Catmull/Hermite tangent scale"/>
+        </div>
+        <div class="row">
+            <input id="loopSplineMaxTangentFactor" value="1.35"
+                   title="loopSplineMaxTangentFactor: local tangent clamp"/>
+            <input value="all loop residue points are anchors" disabled/>
+        </div>
+        <label>Endpoint tangent compatibility controls</label>
+        <div class="row">
+            <input id="endpointBridgeSamples" value="12" title="legacy alias; fallback only"/>
+            <input id="endpointBridgeTangentScale" value="0.85" title="legacy alias; fallback only"/>
+        </div>
+        <div class="row">
+            <input id="endpointBridgeRadiusScale" value="1.0" title="endpointBridgeRadiusScale"/>
+            <input id="endpointBridgeContextResidues" value="1" title="endpointBridgeContextResidues"/>
+        </div>
+        <div class="row">
+            <input id="segmentPaddingResidues" value="0" title="segmentPaddingResidues, keep 0"/>
+            <input value="mode = all loop points + SSE visual endpoints" disabled/>
+        </div>
+        <div class="checkrow">
+            <input id="endpointBridgeEnabled" type="checkbox" checked/>
+            <span>Use neighboring helix/sheet visual endpoint only as loop boundary anchor</span>
+        </div>
+        <div class="checkrow">
+            <input id="endpointBridgeUseContextTangents" type="checkbox" checked/>
+            <span>Use neighbor context only for endpoint tangents; every loop CA remains a spline anchor</span>
+        </div>
+
+        <label>Direct SSE-SSE boundary tube</label>
+        <div class="row">
+            <input id="secondaryBoundaryTubeSamples" value="14" title="secondaryBoundaryTubeSamples"/>
+            <input id="secondaryBoundaryTubeRadiusScale" value="1.0" title="secondaryBoundaryTubeRadiusScale"/>
+        </div>
+        <div class="row">
+            <input id="secondaryBoundaryTubeContextResidues" value="1" title="secondaryBoundaryTubeContextResidues"/>
+            <input id="secondaryBoundaryTubeTangentScale" value="0.75" title="secondaryBoundaryTubeTangentScale"/>
+        </div>
+        <div class="row">
+            <input id="secondaryBoundaryTubeMaxTangentFactor" value="1.20"
+                   title="secondaryBoundaryTubeMaxTangentFactor"/>
+            <input value="HELIX→SHEET / SHEET→HELIX only when no LOOP segment exists" disabled/>
+        </div>
+        <div class="checkrow">
+            <input id="secondaryBoundaryTubeEnabled" type="checkbox" checked/>
+            <span>Draw Hermite tube when two secondary structures touch directly</span>
+        </div>
+
+        <label>Picking</label>
+        <div class="row">
+            <input id="pickProxyRadius" value="0.90" title="pickProxyRadius"/>
+            <input id="pickProxyOpacity" value="0.0" title="pickProxyOpacity"/>
+        </div>
+
+        <div class="checkrow">
+            <input id="showBallStick" type="checkbox" checked/>
+            <span>Show BallStick overlay</span>
+        </div>
+        <div class="checkrow">
+            <input id="livePreview" type="checkbox"/>
+            <span>Cartoon live preview during drag</span>
+        </div>
+        <div class="checkrow">
+            <input id="visualMeshPickable" type="checkbox" checked/>
+            <span>Cartoon visual modules are draggable / pickable</span>
+        </div>
+
+        <label>Edit mode</label>
+        <select id="editMode">
+            <option value="atom">Atom: drag one atom</option>
+            <option value="residue" selected>Residue: drag all atoms in residue</option>
+            <option value="range">Residue window: drag nearby residues</option>
+        </select>
+
+        <label>Residue window size</label>
+        <input id="residueWindow" value="5"/>
+
+        <label>Pick radius in world units</label>
+        <input id="pickRadius" value="1.35"/>
+
+        <button id="enableMouseButton">Enable mouse editing</button>
+        <button id="disableMouseButton" class="secondary">Disable mouse editing</button>
+
+        <div class="row">
+            <button id="undoButton" class="secondary">Undo</button>
+            <button id="redoButton" class="secondary">Redo</button>
+        </div>
+
+        <button id="toggleCartoonButton" class="secondary">Toggle Cartoon</button>
+        <button id="toggleBallStickButton" class="secondary">Toggle BallStick</button>
+        <button id="centerButton" class="secondary">Center model</button>
+        <button id="validateButton">Validate</button>
+        <button id="exportButton" class="secondary">Download PDB</button>
+
+        <h3>Console helpers</h3>
+        <pre>provr.cartoon.loadDemo()
+provr.cartoon.printSummary()
+// Check summary.cartoon.secondaryBoundaryTubeMeshes and fixedSheetArrowMeshes
+provr.cartoon.validate()
+provr.cartoon.forceDemoSecondaryStructure()</pre>
+
+        <h3>Summary</h3>
+        <pre id="summary">{}</pre>
+    </aside>
+
+    <main id="viewport"></main>
+</div>
+<script type="module" src="../static/validation/validate_cartoon.js"></script>
+</body>
+</html>

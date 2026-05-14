@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8"/>
+    <title>ProVR BallStick FastAPI Validation</title>
+    <style>
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #111827;
+            color: #e5e7eb;
+        }
+        #app {
+            display: grid;
+            grid-template-columns: 410px 1fr;
+            width: 100%;
+            height: 100%;
+        }
+        #panel {
+            padding: 14px;
+            border-right: 1px solid #374151;
+            background: #0f172a;
+            overflow: auto;
+        }
+        #viewport {
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            cursor: crosshair;
+        }
+        h2 { margin: 0 0 8px; }
+        .hint {
+            color: #cbd5e1;
+            font-size: 13px;
+            line-height: 1.45;
+            margin-bottom: 10px;
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            color: #cbd5e1;
+            margin-top: 10px;
+            margin-bottom: 4px;
+        }
+        button, input, select {
+            box-sizing: border-box;
+            width: 100%;
+            margin: 4px 0;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid #475569;
+            background: #1f2937;
+            color: #f9fafb;
+        }
+        button {
+            cursor: pointer;
+            background: #2563eb;
+            border-color: #3b82f6;
+            font-weight: 650;
+        }
+        button.secondary {
+            background: #374151;
+            border-color: #4b5563;
+        }
+        button.danger {
+            background: #7f1d1d;
+            border-color: #991b1b;
+        }
+        #status {
+            padding: 8px;
+            border-radius: 8px;
+            background: #1f2937;
+            margin-bottom: 10px;
+            font-size: 13px;
+            white-space: pre-wrap;
+        }
+        #status[data-kind="ok"] { background: #064e3b; }
+        #status[data-kind="warn"] { background: #78350f; }
+        #status[data-kind="error"] { background: #7f1d1d; }
+        pre {
+            background: #020617;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 10px;
+            overflow: auto;
+            max-height: 34vh;
+            font-size: 12px;
+        }
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+        .small {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <aside id="panel">
+        <h2>ProVR BallStick FastAPI 验证</h2>
+        <div class="hint">
+            这个页面直接从 FastAPI 加载你本地的 <code>/src</code> ES modules。
+            打开浏览器控制台，所有验证结果会以 <code>[ProVR]</code> 前缀输出。
+        </div>
+        <div id="status">initializing...</div>
+
+        <label>Load PDB / CIF / mmCIF</label>
+        <input id="structureFileInput" type="file" accept=".pdb,.ent,.cif,.mmcif,.mif"/>
+        <button id="loadDemoButton" class="secondary">Load embedded demo PDB</button>
+
+        <label>Edit mode</label>
+        <select id="editMode">
+            <option value="atom">Atom: drag one atom</option>
+            <option value="residue" selected>Residue: drag all atoms in residue</option>
+            <option value="range">Residue window: drag nearby residues</option>
+        </select>
+
+        <label>Residue window size</label>
+        <input id="residueWindow" value="5"/>
+
+        <label>Pick radius in world units</label>
+        <input id="pickRadius" value="1.35"/>
+
+        <label>BallStick style</label>
+        <div class="row">
+            <input id="atomRadiusScale" value="1.0" title="atomRadiusScale"/>
+            <input id="bondRadius" value="0.075" title="bondRadius"/>
+        </div>
+
+        <button id="enableMouseButton">Enable mouse editing</button>
+        <button id="disableMouseButton" class="secondary">Disable mouse editing</button>
+
+        <div class="row">
+            <button id="undoButton" class="secondary">Undo</button>
+            <button id="redoButton" class="secondary">Redo</button>
+        </div>
+
+        <button id="validateButton">Console validate now</button>
+        <button id="exportButton" class="secondary">Download current PDB</button>
+        <button id="clearConsoleButton" class="danger">Clear console marker</button>
+
+        <p class="small">
+            控制台可用：<code>window.ProVRValidation.validate()</code>,
+            <code>.summary()</code>, <code>.exportPDB()</code>, <code>.state</code>
+        </p>
+
+        <h3>Latest summary</h3>
+        <pre id="output">{}</pre>
+    </aside>
+    <main id="viewport"></main>
+</div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+
+const statusEl = $("status");
+const outputEl = $("output");
+
+function status(message, kind = "ok") {
+    statusEl.textContent = String(message);
+    statusEl.dataset.kind = kind;
+}
+
+function print(obj, label = "summary") {
+    outputEl.textContent = JSON.stringify(obj, null, 2);
+    console.log(`[ProVR] ${label}`, obj);
+}
+
+function warn(message, detail = null) {
+    status(message, "warn");
+    console.warn("[ProVR]", message, detail || "");
+}
+
+function fail(message, detail = null) {
+    status(message, "error");
+    console.error("[ProVR]", message, detail || "");
+}
+
+async function importFirst(name, candidates) {
+    const errors = [];
+    for (const path of candidates) {
+        try {
+            const mod = await import(path);
+            console.log(`[ProVR] loaded ${name}: ${path}`);
+            return mod;
+        } catch (err) {
+            errors.push({path, message: err.message});
+        }
+    }
+    console.error(`[ProVR] failed to load ${name}`, errors);
+    throw new Error(`Cannot import ${name}. Open console for candidate paths.`);
+}
+
+const DEMO_PDB = `HEADER    PROVR VALIDATION DEMO
+ATOM      1  N   ALA A   1      -1.458   0.000   0.000  1.00 20.00           N
+ATOM      2  CA  ALA A   1      -0.100   0.520   0.000  1.00 20.00           C
+ATOM      3  C   ALA A   1       1.050  -0.430   0.000  1.00 20.00           C
+ATOM      4  O   ALA A   1       1.000  -1.650   0.000  1.00 20.00           O
+ATOM      5  CB  ALA A   1      -0.030   1.420   1.230  1.00 20.00           C
+ATOM      6  N   GLY A   2       2.110   0.180   0.000  1.00 20.00           N
+ATOM      7  CA  GLY A   2       3.290  -0.650   0.000  1.00 20.00           C
+ATOM      8  C   GLY A   2       4.540   0.230   0.000  1.00 20.00           C
+ATOM      9  O   GLY A   2       4.490   1.450   0.000  1.00 20.00           O
+CONECT    1    2
+CONECT    2    3    5
+CONECT    3    4    6
+CONECT    6    7
+CONECT    7    8
+CONECT    8    9
+END
+`;
+
+const state = {
+    modules: {},
+    viewport: null,
+    proteinSystem: null,
+    eventBus: null,
+    commandManager: null,
+    structureLoader: null,
+    representationManager: null,
+    mouseController: null,
+    current: {
+        proteinId: null,
+        model: null,
+        repId: null,
+    },
+    events: [],
+    lastCommit: null,
+    beforeFirstEditPDB: null,
+};
+
+window.ProVRValidation = {
+    state,
+    validate: () => validateAll("manual-console"),
+    summary: () => buildSummary(),
+    exportPDB: () => exportCurrentPDB(),
+    loadDemo: () => loadStructureText(DEMO_PDB, "demo.pdb"),
+};
+
+function moduleCandidates() {
+    return {
+        MolecularViewport: [
+            "/src/core/viewport/MolecularViewport.js",
+            "/src/viewport/MolecularViewport.js",
+            "/src/render/viewport/MolecularViewport.js",
+            "/src/viewer/MolecularViewport.js",
+            "/src/ui/MolecularViewport.js",
+        ],
+        ProteinSystem: [
+            "/src/domain/protein/ProteinSystem.js",
+            "/src/protein/ProteinSystem.js",
+        ],
+        StructureLoader: [
+            "/src/domain/io/StructureLoader.js",
+            "/src/io/StructureLoader.js",
+            "/src/core/io/StructureLoader.js",
+        ],
+        EventBus: [
+            "/src/core/event/EventBus.js",
+            "/src/event/EventBus.js",
+        ],
+        EventTypes: [
+            "/src/core/event/EventTypes.js",
+            "/src/event/EventTypes.js",
+        ],
+        CommandManager: [
+            "/src/core/command/CommandManager.js",
+            "/src/command/CommandManager.js",
+        ],
+        RepresentationManager: [
+            "/src/representation/common/RepresentationManager.js",
+            "/src/representations/common/RepresentationManager.js",
+        ],
+        registerBallStickRepresentation: [
+            "/src/representation/ballstick/registerBallStickRepresentation.js",
+            "/src/representations/ballstick/registerBallStickRepresentation.js",
+        ],
+        MouseEditController: [
+            "/src/representation/interaction/MouseEditController.js",
+            "/src/representations/interaction/MouseEditController.js",
+            "/src/interaction/MouseEditController.js",
+        ],
+        BondTopologyBuilder: [
+            "/src/representation/geometry/BondTopologyBuilder.js",
+            "/src/representations/geometry/BondTopologyBuilder.js",
+            "/src/geometry/BondTopologyBuilder.js",
+        ],
+        PDBExporter: [
+            "/src/domain/io/PDBExporter.js",
+            "/src/io/PDBExporter.js",
+            "/src/core/io/PDBExporter.js",
+        ],
+        StructureLoadValidator: [
+            "/src/validation/StructureLoadValidator.js",
+            "/src/validators/StructureLoadValidator.js",
+        ],
+        RenderSystemValidator: [
+            "/src/validation/RenderSystemValidator.js",
+            "/src/validators/RenderSystemValidator.js",
+        ],
+        EditSystemValidator: [
+            "/src/validation/EditSystemValidator.js",
+            "/src/validators/EditSystemValidator.js",
+        ],
+    };
+}
+
+async function loadRequiredModules() {
+    const c = moduleCandidates();
+
+    state.modules.MolecularViewport = await importFirst("MolecularViewport", c.MolecularViewport);
+    state.modules.ProteinSystem = await importFirst("ProteinSystem", c.ProteinSystem);
+    state.modules.StructureLoader = await importFirst("StructureLoader", c.StructureLoader);
+    state.modules.EventBus = await importFirst("EventBus", c.EventBus);
+    state.modules.EventTypes = await importFirst("EventTypes", c.EventTypes);
+    state.modules.CommandManager = await importFirst("CommandManager", c.CommandManager);
+    state.modules.RepresentationManager = await importFirst("RepresentationManager", c.RepresentationManager);
+    state.modules.registerBallStickRepresentation = await importFirst("registerBallStickRepresentation", c.registerBallStickRepresentation);
+    state.modules.MouseEditController = await importFirst("MouseEditController", c.MouseEditController);
+    state.modules.BondTopologyBuilder = await importFirst("BondTopologyBuilder", c.BondTopologyBuilder);
+    state.modules.PDBExporter = await importFirst("PDBExporter", c.PDBExporter);
+
+    // Optional validators. If paths differ, the page still works.
+    for (const optionalName of ["StructureLoadValidator", "RenderSystemValidator", "EditSystemValidator"]) {
+        try {
+            state.modules[optionalName] = await importFirst(optionalName, c[optionalName]);
+        } catch (err) {
+            console.warn(`[ProVR] optional validator not loaded: ${optionalName}`, err.message);
+        }
+    }
+}
+
+function bindEventLogging() {
+    const {EventTypes} = state.modules.EventTypes;
+    const types = Object.values(EventTypes || {});
+    for (const type of types) {
+        state.eventBus.on(type, (evt) => {
+            state.events.push({
+                time: new Date().toISOString(),
+                type,
+                proteinId: evt?.proteinId,
+                atomIds: evt?.atomIds,
+                residueIds: evt?.residueIds,
+                chainIds: evt?.chainIds,
+                phase: evt?.phase,
+                source: evt?.source,
+                revision: evt?.revision,
+            });
+            if (state.events.length > 80) state.events.shift();
+            console.debug("[ProVR:event]", type, evt);
+        });
+    }
+}
+
+async function init() {
+    try {
+        status("loading ES modules...", "warn");
+        await loadRequiredModules();
+
+        const {MolecularViewport} = state.modules.MolecularViewport;
+        const {ProteinSystem} = state.modules.ProteinSystem;
+        const {StructureLoader} = state.modules.StructureLoader;
+        const {EventBus} = state.modules.EventBus;
+        const {CommandManager} = state.modules.CommandManager;
+        const {RepresentationManager} = state.modules.RepresentationManager;
+        const {registerBallStickRepresentation} = state.modules.registerBallStickRepresentation;
+
+        state.proteinSystem = new ProteinSystem();
+        state.eventBus = new EventBus();
+        state.commandManager = new CommandManager({
+            eventBus: state.eventBus,
+            context: {
+                proteinSystem: state.proteinSystem,
+                eventBus: state.eventBus,
+            },
+        });
+        state.structureLoader = new StructureLoader({proteinSystem: state.proteinSystem});
+
+        state.viewport = new MolecularViewport({
+            container: "#viewport",
+            background: 0x111827,
+            enableControls: true,
+            cameraPosition: [0, 0, 18],
+        });
+        await state.viewport.init();
+        state.viewport.start();
+
+        state.representationManager = new RepresentationManager({
+            proteinSystem: state.proteinSystem,
+            eventBus: state.eventBus,
+            scene: state.viewport.scene,
+        });
+        registerBallStickRepresentation(state.representationManager);
+
+        bindEventLogging();
+
+        bindUI();
+        status("ready. Load demo PDB or upload your structure.", "ok");
+        print({ready: true, message: "Open console and load a structure."}, "ready");
+    } catch (err) {
+        fail(err.message, err);
+    }
+}
+
+function bindUI() {
+    $("structureFileInput").addEventListener("change", async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        const text = await file.text();
+        await loadStructureText(text, file.name);
+    });
+
+    $("loadDemoButton").addEventListener("click", () => loadStructureText(DEMO_PDB, "demo.pdb"));
+    $("enableMouseButton").addEventListener("click", () => enableMouseEdit());
+    $("disableMouseButton").addEventListener("click", () => disableMouseEdit());
+
+    $("pickRadius").addEventListener("change", () => {
+        const value = Number($("pickRadius").value);
+        state.mouseController?.setPickRadiusWorld?.(value);
+        console.log("[ProVR] pick radius changed", value);
+    });
+
+    $("undoButton").addEventListener("click", () => {
+        state.commandManager.undo();
+        validateAll("after-undo");
+    });
+
+    $("redoButton").addEventListener("click", () => {
+        state.commandManager.redo();
+        validateAll("after-redo");
+    });
+
+    $("validateButton").addEventListener("click", () => validateAll("manual-button"));
+    $("exportButton").addEventListener("click", () => downloadCurrentPDB());
+    $("clearConsoleButton").addEventListener("click", () => {
+        console.log("[ProVR] ---------------- clear marker ----------------");
+        status("console marker printed", "ok");
+    });
+}
+
+function uniqueProteinId(filename) {
+    const base = String(filename || "protein")
+        .split(/[\\/]/).pop()
+        .replace(/\.[^.]+$/, "")
+        .replace(/[^a-zA-Z0-9_-]/g, "_")
+        .toLowerCase() || "protein";
+    return `${base}_${Date.now().toString(36)}`;
+}
+
+async function loadStructureText(text, filename = "structure.pdb") {
+    try {
+        disableMouseEdit();
+
+        if (state.current.repId) {
+            state.representationManager.remove(state.current.repId);
+            state.current.repId = null;
+        }
+
+        const proteinId = uniqueProteinId(filename);
+        const loaded = state.structureLoader.loadText({
+            text,
+            proteinId,
+            filename,
+            format: "auto",
+            replace: true,
+        });
+
+        const model = loaded.model;
+        state.current = {proteinId: loaded.proteinId, model, repId: null};
+
+        const {buildBondTopology} = state.modules.BondTopologyBuilder;
+        const topology = buildBondTopology(model, {
+            force: false,
+            inferIfExistingBonds: true,
+            inferProteinInternal: true,
+            inferProteinPeptide: true,
+            inferHeterogenInternal: true,
+            includeHydrogen: true,
+        });
+        console.log("[ProVR] bond topology", topology);
+
+        const repId = `ballstick_fastapi_${loaded.proteinId}`;
+        state.current.repId = state.representationManager.create({
+            id: repId,
+            type: "ballstick",
+            proteinId: loaded.proteinId,
+            name: "FastAPI BallStick validation",
+            filter: {
+                protein: true,
+                nucleic: true,
+                heterogen: true,
+                water: false,
+                unknown: false,
+            },
+            style: {
+                colorScheme: "element",
+                atomRadiusScale: Number($("atomRadiusScale").value) || 1.0,
+                bondRadius: Number($("bondRadius").value) || 0.075,
+                halfBondColor: true,
+                opacity: 1.0,
+            },
+            geometry: {
+                atomSegments: 20,
+                bondSegments: 12,
+                bondInsetRatio: 0.62,
+                stretchedBondFactor: 2.25,
+                bondTopology: {
+                    force: false,
+                    inferIfExistingBonds: true,
+                    inferProteinInternal: true,
+                    inferProteinPeptide: true,
+                    inferHeterogenInternal: true,
+                    includeHydrogen: true,
+                },
+            },
+            interaction: {
+                pickable: true,
+                pickAtoms: true,
+                pickBonds: true,
+                targetLevel: "atom",
+            },
+            visible: true,
+        });
+
+        state.viewport.centerOnModel(model);
+        state.beforeFirstEditPDB = exportCurrentPDB();
+
+        validateAll("after-load");
+        status(`loaded ${filename}: ${model.atoms.size} atoms, ${model.residues.size} residues`, "ok");
+    } catch (err) {
+        fail(`load failed: ${err.message}`, err);
+    }
+}
+
+function enableMouseEdit() {
+    if (!state.current.model) {
+        warn("load a structure first");
+        return;
+    }
+
+    if (state.mouseController) state.mouseController.disable();
+
+    const {MouseEditController} = state.modules.MouseEditController;
+
+    state.mouseController = new MouseEditController({
+        viewport: state.viewport,
+        proteinSystem: state.proteinSystem,
+        eventBus: state.eventBus,
+        commandManager: state.commandManager,
+        getModel: () => state.current.model,
+        getMode: () => $("editMode").value,
+        getResidueWindow: () => Number($("residueWindow").value) || 5,
+        pickRadiusWorld: Number($("pickRadius").value) || 1.35,
+        onStatus: (message) => {
+            status(message, "ok");
+            console.log("[ProVR:mouse]", message);
+        },
+        onPreview: (payload) => {
+            console.debug("[ProVR:preview]", payload);
+        },
+        onCommit: (payload) => {
+            state.lastCommit = payload;
+            console.log("[ProVR:commit]", payload);
+            validateAll("after-commit");
+        },
+    });
+
+    state.mouseController.enable();
+    status("mouse editing enabled. Drag an atom/residue/range in the viewport.", "ok");
+}
+
+function disableMouseEdit() {
+    if (!state.mouseController) return;
+    state.mouseController.disable();
+    state.mouseController = null;
+    status("mouse editing disabled", "ok");
+}
+
+function countBonds(model) {
+    if (!model?.bondGraph?._adj) return 0;
+    let endpoints = 0;
+    for (const neighbors of model.bondGraph._adj.values()) endpoints += neighbors.size;
+    return endpoints / 2;
+}
+
+function getCurrentRep() {
+    return state.current.repId ? state.representationManager.get(state.current.repId) : null;
+}
+
+function exportCurrentPDB() {
+    if (!state.current.model) return "";
+    const {exportPDB} = state.modules.PDBExporter;
+    return exportPDB(state.current.model, {
+        includeConect: true,
+        includeHeader: true,
+        endRecord: true,
+    });
+}
+
+function downloadCurrentPDB() {
+    if (!state.current.model) {
+        warn("no model to export");
+        return;
+    }
+    const {downloadText} = state.modules.PDBExporter;
+    const text = exportCurrentPDB();
+    downloadText(text, `${state.current.proteinId}_edited.pdb`, "chemical/x-pdb");
+    console.log("[ProVR] exported PDB preview", text.slice(0, 800));
+}
+
+function buildSummary() {
+    const model = state.current.model;
+    const rep = getCurrentRep();
+    const pickRegistry = state.representationManager?.context?.pickRegistry;
+
+    const currentPDB = exportCurrentPDB();
+    const pdbChangedFromFirstEdit = state.beforeFirstEditPDB != null
+        ? currentPDB !== state.beforeFirstEditPDB
+        : null;
+
+    return {
+        ok: !!model && !!rep,
+        current: {
+            proteinId: state.current.proteinId,
+            repId: state.current.repId,
+        },
+        model: model ? {
+            atoms: model.atoms.size,
+            residues: model.residues.size,
+            chains: model.chains.size,
+            bonds: countBonds(model),
+            revision: model.revision,
+            bondTopology: model.info?.bondTopology?.summary || null,
+        } : null,
+        representation: rep ? {
+            built: rep.built,
+            visible: rep.visible,
+            summary: rep.summary?.() || rep.root?.userData?.summary || null,
+        } : null,
+        pickRegistry: pickRegistry?.summary?.() || null,
+        command: {
+            undoStackSize: state.commandManager?.undoStack?.length ?? null,
+            redoStackSize: state.commandManager?.redoStack?.length ?? null,
+        },
+        mouse: {
+            enabled: !!state.mouseController?.enabled,
+            mode: $("editMode").value,
+            residueWindow: Number($("residueWindow").value) || 5,
+            lastCommit: state.lastCommit ? {
+                ok: state.lastCommit.ok,
+                moved: state.lastCommit.moved,
+                translation: state.lastCommit.translation,
+                targetKind: state.lastCommit.target?.kind,
+                atomCount: state.lastCommit.target?.atomIds?.length,
+            } : null,
+        },
+        pdb: {
+            length: currentPDB.length,
+            changedFromInitialLoadedState: pdbChangedFromFirstEdit,
+        },
+        recentEvents: state.events.slice(-12),
+    };
+}
+
+async function validateAll(label = "manual") {
+    const summary = buildSummary();
+    const issues = [];
+
+    if (!state.current.model) issues.push("model missing");
+    if (!getCurrentRep()) issues.push("BallStick representation missing");
+    if (summary.model && summary.model.atoms <= 0) issues.push("no atoms");
+    if (summary.model && summary.model.bonds <= 0) issues.push("no bonds");
+    if (summary.representation?.summary?.atoms <= 0) issues.push("BallStick summary has no atoms");
+    if (summary.representation?.summary?.bonds <= 0) issues.push("BallStick summary has no bonds");
+    if (summary.pickRegistry && summary.pickRegistry.total <= 0) issues.push("PickRegistry has no targets");
+
+    const result = {
+        label,
+        ok: issues.length === 0,
+        issues,
+        summary,
+    };
+
+    print(result, `validation:${label}`);
+
+    if (result.ok) {
+        status(`validation ok: ${label}`, "ok");
+    } else {
+        status(`validation issues: ${issues.join("; ")}`, "warn");
+    }
+
+    // Optional project validators, if import paths matched.
+    tryRunOptionalValidators(label);
+    return result;
+}
+
+function tryRunOptionalValidators(label) {
+    const model = state.current.model;
+    if (!model) return;
+
+    try {
+        const v = state.modules.StructureLoadValidator;
+        if (v?.validateLoadedStructure) {
+            console.log(`[ProVR:validator:${label}] StructureLoadValidator`, v.validateLoadedStructure(model));
+        }
+    } catch (err) {
+        console.warn("[ProVR] StructureLoadValidator failed", err);
+    }
+
+    try {
+        const v = state.modules.RenderSystemValidator;
+        if (v?.validateRenderSystem) {
+            console.log(`[ProVR:validator:${label}] RenderSystemValidator`, v.validateRenderSystem({
+                model,
+                viewport: state.viewport,
+                manager: state.representationManager,
+                lineRepId: null,
+            }));
+        }
+    } catch (err) {
+        console.warn("[ProVR] RenderSystemValidator failed", err);
+    }
+
+    try {
+        const v = state.modules.EditSystemValidator;
+        if (v?.validateEditSystem) {
+            console.log(`[ProVR:validator:${label}] EditSystemValidator`, v.validateEditSystem({
+                model,
+                beforePDB: state.beforeFirstEditPDB,
+                afterPDB: exportCurrentPDB(),
+                commandManager: state.commandManager,
+            }));
+        }
+    } catch (err) {
+        console.warn("[ProVR] EditSystemValidator failed", err);
+    }
+}
+
+init();
+</script>
+</body>
+</html>

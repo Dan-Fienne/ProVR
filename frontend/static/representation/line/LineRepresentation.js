@@ -1,9 +1,10 @@
-import * as THREE from '../../libs/three.core.js';
+import * as THREE from '../../libs/three.webgpu.js';
 import {RepresentationBase} from '../common/RepresentationBase.js';
 import {createStructureFilter} from '../../domain/protein/StructureFilter.js';
 import {buildBondTopology, getBondTopologyRecords} from '../geometry/BondTopologyBuilder.js';
 import {targetFromBond} from '../interaction/PickTarget.js';
 import {RepDirtyFlags} from '../common/DirtyPolicy.js';
+import {EventTypes} from '../../core/event/EventTypes.js';
 
 const ELEMENT_COLORS = Object.freeze({
     H: 0xffffff,
@@ -178,6 +179,7 @@ export class LineRepresentation extends RepresentationBase {
             pickTargets: this._pickables.size,
             colorScheme,
             filter: {...this.spec.filter},
+            lastUpdatedRevision: model.revision,
         };
         this.root.userData.summary = this._summary;
 
@@ -188,11 +190,16 @@ export class LineRepresentation extends RepresentationBase {
 
     update(evt) {
         if (!evt || evt.proteinId !== this.proteinId) return;
+
         switch (evt.type) {
-            case 'atomPositionChanged':
-            case 'chainTransformed':
-            case 'residueModified':
-            case 'structureRebuilt':
+            case EventTypes.ATOM_POSITION_CHANGED:
+            case EventTypes.ATOM_SET_TRANSFORMED:
+            case EventTypes.CHAIN_TRANSFORMED:
+            case EventTypes.GEOMETRY_CHANGED:
+                this._refreshPositionsFromModel();
+                break;
+            case EventTypes.RESIDUE_MODIFIED:
+            case EventTypes.STRUCTURE_REBUILT:
                 this.markDirty(RepDirtyFlags.FULL_REBUILD);
                 break;
             default:
@@ -206,6 +213,40 @@ export class LineRepresentation extends RepresentationBase {
 
     getBondRecords({limit = Infinity} = {}) {
         return this._bondRecords.slice(0, limit);
+    }
+
+    _refreshPositionsFromModel() {
+        if (!this._geometry || !this._bondRecords.length) return false;
+        const model = this.model;
+        if (!model) return false;
+
+        const positionAttr = this._geometry.getAttribute('position');
+        if (!positionAttr) return false;
+
+        const arr = positionAttr.array;
+        let offset = 0;
+        for (const record of this._bondRecords) {
+            const [aId, bId] = record.atomIds || [];
+            const pA = model.getAtomPosition(aId);
+            const pB = model.getAtomPosition(bId);
+            if (!pA || !pB) {
+                offset += 6;
+                continue;
+            }
+            arr[offset++] = pA[0];
+            arr[offset++] = pA[1];
+            arr[offset++] = pA[2];
+            arr[offset++] = pB[0];
+            arr[offset++] = pB[1];
+            arr[offset++] = pB[2];
+        }
+
+        positionAttr.needsUpdate = true;
+        this._geometry.computeBoundingSphere();
+        this._geometry.computeBoundingBox?.();
+
+        if (this._summary) this._summary.lastUpdatedRevision = model.revision;
+        return true;
     }
 
     disposeObjectsOnly() {
