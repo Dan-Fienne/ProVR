@@ -1,48 +1,31 @@
 import {
-    AminoAcids,
     ChainType,
-    NucleicAcids,
     RecordType,
     ResidueKind,
-    WaterResidues,
-    normalizeRecordType,
-    normalizeResidueName,
-} from "./ProteinConstants.js";
+    isNucleicResidueName,
+    isProteinResidueName,
+    isWaterResidueName,
+} from './ProteinConstants.js';
 
-export function isWaterResidue(resName) {
-    return WaterResidues.has(normalizeResidueName(resName));
-}
+export function classifyResidue({recordType = RecordType.ATOM, resName = ''} = {}) {
+    const name = String(resName || '').trim().toUpperCase();
 
-export function isAminoAcid(resName) {
-    return AminoAcids.has(normalizeResidueName(resName));
-}
-
-export function isNucleicAcid(resName) {
-    return NucleicAcids.has(normalizeResidueName(resName));
-}
-
-export function classifyResidue({recordType = RecordType.ATOM, resName = 'UNK'} = {}) {
-    const normalizedRecordType = normalizeRecordType(recordType);
-    const name = normalizeResidueName(resName);
-
-    if (isWaterResidue(name)) {
+    if (isWaterResidueName(name)) {
         return {
-            recordType: normalizedRecordType,
-            chainType: ChainType.HET,
             kind: ResidueKind.WATER,
+            chainType: ChainType.HETEROGEN,
             isProtein: false,
             isNucleic: false,
-            isHeterogen: false,
+            isHeterogen: true,
             isWater: true,
             isUnknown: false,
         };
     }
 
-    if (isAminoAcid(name)) {
+    if (isProteinResidueName(name)) {
         return {
-            recordType: normalizedRecordType,
-            chainType: ChainType.AA,
             kind: ResidueKind.PROTEIN,
+            chainType: ChainType.PROTEIN,
             isProtein: true,
             isNucleic: false,
             isHeterogen: false,
@@ -51,11 +34,10 @@ export function classifyResidue({recordType = RecordType.ATOM, resName = 'UNK'} 
         };
     }
 
-    if (isNucleicAcid(name)) {
+    if (isNucleicResidueName(name)) {
         return {
-            recordType: normalizedRecordType,
-            chainType: ChainType.NA,
             kind: ResidueKind.NUCLEIC,
+            chainType: ChainType.NUCLEIC,
             isProtein: false,
             isNucleic: true,
             isHeterogen: false,
@@ -64,11 +46,10 @@ export function classifyResidue({recordType = RecordType.ATOM, resName = 'UNK'} 
         };
     }
 
-    if (normalizedRecordType === RecordType.HETATM) {
+    if (String(recordType).toUpperCase() === RecordType.HETATM) {
         return {
-            recordType: normalizedRecordType,
-            chainType: ChainType.HET,
             kind: ResidueKind.HETEROGEN,
+            chainType: ChainType.HETEROGEN,
             isProtein: false,
             isNucleic: false,
             isHeterogen: true,
@@ -78,13 +59,30 @@ export function classifyResidue({recordType = RecordType.ATOM, resName = 'UNK'} 
     }
 
     return {
-        recordType: normalizedRecordType,
-        chainType: ChainType.UNK,
         kind: ResidueKind.UNKNOWN,
+        chainType: ChainType.UNKNOWN,
         isProtein: false,
         isNucleic: false,
         isHeterogen: false,
         isWater: false,
         isUnknown: true,
     };
+}
+
+export function inferChainType(model, chainId) {
+    const chain = model.chains.get(chainId);
+    if (!chain) return ChainType.UNKNOWN;
+    const counts = {};
+    for (const residueId of chain.residueIds || []) {
+        const residue = model.residues.get(residueId);
+        if (!residue) continue;
+        counts[residue.kind] = (counts[residue.kind] || 0) + 1;
+    }
+    const kinds = Object.keys(counts).filter((kind) => counts[kind] > 0);
+    if (kinds.length === 1) {
+        if (kinds[0] === ResidueKind.PROTEIN) return ChainType.PROTEIN;
+        if (kinds[0] === ResidueKind.NUCLEIC) return ChainType.NUCLEIC;
+        if (kinds[0] === ResidueKind.HETEROGEN || kinds[0] === ResidueKind.WATER) return ChainType.HETEROGEN;
+    }
+    return kinds.length ? ChainType.MIXED : ChainType.UNKNOWN;
 }

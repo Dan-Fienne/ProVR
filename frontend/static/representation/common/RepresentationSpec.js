@@ -10,6 +10,25 @@ function clonePlain(value) {
     return out;
 }
 
+function deepMerge(base = {}, patch = {}) {
+    const out = clonePlain(base) || {};
+    for (const [key, value] of Object.entries(patch || {})) {
+        if (
+            value &&
+            typeof value === 'object' &&
+            !Array.isArray(value) &&
+            out[key] &&
+            typeof out[key] === 'object' &&
+            !Array.isArray(out[key])
+        ) {
+            out[key] = deepMerge(out[key], value);
+        } else {
+            out[key] = clonePlain(value);
+        }
+    }
+    return out;
+}
+
 export const DefaultRepresentationFilter = Object.freeze({
     protein: true,
     nucleic: true,
@@ -24,7 +43,6 @@ export const DefaultRepresentationFilter = Object.freeze({
 export const DefaultRepresentationStyle = Object.freeze({
     colorScheme: 'element',
     opacity: 1.0,
-    visible: true,
 });
 
 export const DefaultRepresentationGeometry = Object.freeze({
@@ -36,6 +54,30 @@ export const DefaultRepresentationInteraction = Object.freeze({
     targetLevel: 'atom',
 });
 
+const KNOWN_KEYS = new Set([
+    'id',
+    'type',
+    'proteinId',
+    'name',
+    'filter',
+    'style',
+    'geometry',
+    'interaction',
+    'visible',
+    'metadata',
+]);
+
+/**
+ * RepresentationSpec preserves unknown top-level extras.
+ *
+ * This is critical for surface specs:
+ * - layers
+ * - ranges
+ * - residueColorRules
+ * - colorRules
+ *
+ * and future representation plugins.
+ */
 export class RepresentationSpec {
     constructor({
                     id = null,
@@ -48,6 +90,7 @@ export class RepresentationSpec {
                     interaction = {},
                     visible = true,
                     metadata = {},
+                    ...extras
                 } = {}) {
         if (!type) throw new Error('[RepresentationSpec] type is required');
         if (!proteinId) throw new Error('[RepresentationSpec] proteinId is required');
@@ -56,31 +99,49 @@ export class RepresentationSpec {
         this.type = type;
         this.proteinId = proteinId;
         this.name = name || this.id;
-        this.filter = {...DefaultRepresentationFilter, ...clonePlain(filter)};
-        this.style = {...DefaultRepresentationStyle, ...clonePlain(style)};
-        this.geometry = {...DefaultRepresentationGeometry, ...clonePlain(geometry)};
-        this.interaction = {...DefaultRepresentationInteraction, ...clonePlain(interaction)};
-        this.visible = visible;
-        this.metadata = clonePlain(metadata);
+
+        this.filter = deepMerge(DefaultRepresentationFilter, filter);
+        this.style = deepMerge(DefaultRepresentationStyle, style);
+        this.geometry = deepMerge(DefaultRepresentationGeometry, geometry);
+        this.interaction = deepMerge(DefaultRepresentationInteraction, interaction);
+        this.visible = visible !== false;
+        this.metadata = clonePlain(metadata) || {};
+
+        this._extras = clonePlain(extras) || {};
+        Object.assign(this, this._extras);
+
+        Object.freeze(this.filter);
+        Object.freeze(this.style);
+        Object.freeze(this.geometry);
+        Object.freeze(this.interaction);
+        Object.freeze(this.metadata);
+        Object.freeze(this._extras);
     }
 
     patch(patch = {}) {
+        const nextExtras = {...this._extras};
+        for (const [key, value] of Object.entries(patch)) {
+            if (!KNOWN_KEYS.has(key)) nextExtras[key] = clonePlain(value);
+        }
+
         return new RepresentationSpec({
+            ...nextExtras,
             id: patch.id ?? this.id,
             type: patch.type ?? this.type,
             proteinId: patch.proteinId ?? this.proteinId,
             name: patch.name ?? this.name,
-            filter: patch.filter ? {...this.filter, ...clonePlain(patch.filter)} : this.filter,
-            style: patch.style ? {...this.style, ...clonePlain(patch.style)} : this.style,
-            geometry: patch.geometry ? {...this.geometry, ...clonePlain(patch.geometry)} : this.geometry,
-            interaction: patch.interaction ? {...this.interaction, ...clonePlain(patch.interaction)} : this.interaction,
+            filter: patch.filter ? deepMerge(this.filter, patch.filter) : this.filter,
+            style: patch.style ? deepMerge(this.style, patch.style) : this.style,
+            geometry: patch.geometry ? deepMerge(this.geometry, patch.geometry) : this.geometry,
+            interaction: patch.interaction ? deepMerge(this.interaction, patch.interaction) : this.interaction,
             visible: patch.visible ?? this.visible,
-            metadata: patch.metadata ? {...this.metadata, ...clonePlain(patch.metadata)} : this.metadata,
+            metadata: patch.metadata ? deepMerge(this.metadata, patch.metadata) : this.metadata,
         });
     }
 
     toJSON() {
         return {
+            ...clonePlain(this._extras),
             id: this.id,
             type: this.type,
             proteinId: this.proteinId,
@@ -98,4 +159,17 @@ export class RepresentationSpec {
 export function normalizeRepresentationSpec(input) {
     if (input instanceof RepresentationSpec) return input;
     return new RepresentationSpec(input);
+}
+
+export function mergeRepresentationDefaults(input = {}, defaults = {}) {
+    const spec = normalizeRepresentationSpec({
+        ...clonePlain(defaults),
+        ...clonePlain(input),
+        filter: deepMerge(defaults.filter || {}, input.filter || {}),
+        style: deepMerge(defaults.style || {}, input.style || {}),
+        geometry: deepMerge(defaults.geometry || {}, input.geometry || {}),
+        interaction: deepMerge(defaults.interaction || {}, input.interaction || {}),
+        metadata: deepMerge(defaults.metadata || {}, input.metadata || {}),
+    });
+    return spec;
 }

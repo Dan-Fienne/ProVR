@@ -1,28 +1,22 @@
-import {ChainType, RecordType, ResidueKind, SSEType} from './ProteinConstants.js';
 import {BondGraph} from './BondGraph.js';
 import {SecondaryStructureModel} from './SecondaryStructureModel.js';
 import {SelectionModel} from './SelectionModel.js';
-
-function residueLabel(seqNum, insCode = '') {
-    return `${seqNum}${insCode || ''}`;
-}
-
-function normalizeLabelPart(value) {
-    return String(value ?? '').trim() || '_';
-}
+import {createAtom, createChain, createResidue} from './ProteinEntities.js';
+import {CoordinateStore} from './CoordinateStore.js';
+import {normalizeProteinId, normalizeChainId, residueKey, compareResidueOrder} from './ProteinIdentity.js';
+import {inferChainType} from './StructureClassifier.js';
 
 export class ProteinModel {
-    constructor({proteinId, coordinateStore}) {
-        this.id = proteinId;
-        this.coordinateStore = coordinateStore;
-
-        this.revision = 0;
-        this.info = {
-            pdbId: proteinId,
-            classification: '',
-            format: '',
-            source: '',
-        };
+    constructor({
+                    id,
+                    name = '',
+                    coordinateStore = null,
+                    metadata = {},
+                } = {}) {
+        if (!id) throw new Error('[ProteinModel] id is required');
+        this.id = normalizeProteinId(id);
+        this.name = name || this.id;
+        this.coordinateStore = coordinateStore || new CoordinateStore();
 
         this.chains = new Map();
         this.residues = new Map();
@@ -30,162 +24,191 @@ export class ProteinModel {
 
         this.bondGraph = new BondGraph();
         this.secondary = new SecondaryStructureModel();
+        this.secondaryStructure = this.secondary;
         this.selection = new SelectionModel();
 
-        this._residueKeyMap = new Map();
-        this._chainResidueKeyMap = new Map();
+        this.info = {
+            format: '',
+            source: '',
+            classification: '',
+            pdbId: '',
+            bondTopology: null,
+            metadata: {...metadata},
+        };
+
+        this.revision = 0;
+        this.createdAt = new Date().toISOString();
+        this.updatedAt = this.createdAt;
     }
 
-    bumpRevision() {
-        this.revision += 1;
-        return this.revision;
-    }
-
-    ensureChain(chainId, chainType = ChainType.UNK) {
-        const id = normalizeLabelPart(chainId) === '_' ? 'X' : String(chainId);
+    ensureChain(chainId, options = {}) {
+        const id = normalizeChainId(chainId);
         if (!this.chains.has(id)) {
-            this.chains.set(id, {
-                id,
-                type: chainType,
-                types: new Set(chainType ? [chainType] : []),
-                residueIds: [],
-                previewTransform: null,
-            });
-        } else {
-            const c = this.chains.get(id);
-            if (chainType) c.types.add(chainType);
-            if (c.type === ChainType.UNK && chainType !== ChainType.UNK) c.type = chainType;
+            this.chains.set(id, createChain({id, ...options}));
         }
         return this.chains.get(id);
     }
 
-    addResidue({
-                   chainId,
-                   seqNum,
-                   insCode = '',
-                   name,
-                   chainType = ChainType.UNK,
-                   recordType = RecordType.ATOM,
-                   kind = ResidueKind.UNKNOWN,
-                   isProtein = false,
-                   isNucleic = false,
-                   isHeterogen = false,
-                   isWater = false,
-                   isUnknown = false,
-               }) {
-        const safeChainId = normalizeLabelPart(chainId) === '_' ? 'X' : String(chainId);
-        const safeSeqNum = Number.isFinite(Number(seqNum)) ? Number(seqNum) : 0;
-        const safeInsCode = ['?', '.'].includes(String(insCode).trim()) ? '' : String(insCode || '').trim();
-        const safeName = (name || 'UNK').toUpperCase();
-        const label = residueLabel(safeSeqNum, safeInsCode);
-        const fullKey = [safeChainId, label, safeName, recordType, kind].map(normalizeLabelPart).join(':');
-        const hit = this._residueKeyMap.get(fullKey);
-        if (hit) return this.residues.get(hit);
+    addChain(input = {}) {
+        const chain = createChain(input);
+        if (!this.chains.has(chain.id)) this.chains.set(chain.id, chain);
+        return this.chains.get(chain.id);
+    }
 
-        const chain = this.ensureChain(safeChainId, chainType);
-        const residueId = `${this.id}:${safeChainId}:${label}:${safeName}:${recordType}`;
+    addResidue(input = {}) {
+        const chain = this.ensureChain(input.chainId || 'A');
+        const id = input.id || residueKey({
+            proteinId: this.id,
+            chainId: chain.id,
+            seqNum: input.seqNum,
+            insCode: input.insCode,
+            name: input.name,
+            recordType: input.recordType,
+        });
 
-        const residue = {
-            id: residueId,
-            chainId: safeChainId,
-            seqNum: safeSeqNum,
-            insCode: safeInsCode,
-            label,
-            name: safeName,
-            atomIds: [],
-            sse: SSEType.LOOP,
-            order: chain.residueIds.length,
+        if (this.residues.has(id)) return this.residues.get(id);
 
-            chainType,
-            recordType,
-            kind,
-            isProtein,
-            isNucleic,
-            isHeterogen,
-            isWater,
-            isUnknown,
-        };
+        const residue = createResidue({
+            proteinId: this.id,
+            ...input,
+            id,
+            chainId: chain.id,
+            order: input.order ?? chain.residueIds.length,
+        });
 
-        this.residues.set(residueId, residue);
-        chain.residueIds.push(residueId);
-        this._residueKeyMap.set(fullKey, residueId);
-
-        const simpleKey = `${safeChainId}:${label}`;
-        if (!this._chainResidueKeyMap.has(simpleKey) || residue.isProtein || residue.isNucleic) {
-            this._chainResidueKeyMap.set(simpleKey, residueId);
-        }
-
+        this.residues.set(residue.id, residue);
+        if (!chain.residueIds.includes(residue.id)) chain.residueIds.push(residue.id);
+        chain.type = inferChainType(this, chain.id);
         return residue;
     }
 
-    getResidueByChainLabel(chainId, label) {
-        const key = `${chainId}:${label}`;
-        const residueId = this._chainResidueKeyMap.get(key);
-        if (!residueId) return null;
-        return this.residues.get(residueId) || null;
-    }
+    addAtom(input = {}) {
+        const residue = this.residues.get(input.residueId);
+        if (!residue) throw new Error(`[ProteinModel] residue not found for atom: ${input.residueId}`);
 
-    addAtom({
-                atomId,
-                atomName,
-                element,
-                x, y, z,
-                occupancy = 1.0,
-                bFactor = 0.0,
-                residueId,
-                recordType = RecordType.ATOM,
-                altLoc = '',
-                serial = atomId,
-            }) {
-        if (this.atoms.has(atomId)) return this.atoms.get(atomId);
+        const positionIndex = input.positionIndex ?? this.coordinateStore.allocate(input.x, input.y, input.z);
+        if (input.positionIndex != null && (input.x != null || input.y != null || input.z != null)) {
+            this.coordinateStore.setXYZ(input.positionIndex, input.x || 0, input.y || 0, input.z || 0);
+        }
 
-        const positionIndex = this.coordinateStore.allocAtom(x, y, z);
-        const atom = {
-            id: atomId,
-            serial,
-            name: (atomName || '').toUpperCase(),
-            element: (element || '').toUpperCase(),
-            occupancy,
-            bFactor,
-            residueId,
+        const atom = createAtom({
+            ...input,
             positionIndex,
-            recordType,
-            altLoc: ['?', '.'].includes(String(altLoc).trim()) ? '' : String(altLoc || '').trim(),
-        };
-        this.atoms.set(atomId, atom);
+            recordType: input.recordType || residue.recordType,
+        });
 
-        const residue = this.residues.get(residueId);
-        if (residue) residue.atomIds.push(atomId);
+        if (this.atoms.has(atom.id)) return this.atoms.get(atom.id);
 
+        this.atoms.set(atom.id, atom);
+        if (!residue.atomIds.includes(atom.id)) residue.atomIds.push(atom.id);
+        this.bondGraph.addAtom(atom.id);
         return atom;
     }
 
     getAtom(atomId) {
-        return this.atoms.get(atomId) || null;
+        return this.atoms.get(atomId) || this.atoms.get(Number(atomId)) || null;
     }
 
-    setAtomPosition(atomId, x, y, z) {
-        const atom = this.atoms.get(atomId);
-        if (!atom) return false;
-        this.coordinateStore.setXYZ(atom.positionIndex, x, y, z);
-        return true;
-    }
-
-    getAtomPosition(atomId, out = [0, 0, 0]) {
-        const atom = this.atoms.get(atomId);
+    getAtomPosition(atomId, out = null) {
+        const atom = this.getAtom(atomId);
         if (!atom) return null;
         return this.coordinateStore.getXYZ(atom.positionIndex, out);
     }
 
-    getChainAtomIds(chainId) {
+    setAtomPosition(atomId, x, y, z) {
+        const atom = this.getAtom(atomId);
+        if (!atom) return false;
+        if (Array.isArray(x)) this.coordinateStore.setXYZ(atom.positionIndex, x[0], x[1], x[2]);
+        else this.coordinateStore.setXYZ(atom.positionIndex, x, y, z);
+        return true;
+    }
+
+    getResidueAtoms(residueId) {
+        const residue = this.residues.get(residueId);
+        return residue ? residue.atomIds.map((id) => this.getAtom(id)).filter(Boolean) : [];
+    }
+
+    getChainResidues(chainId) {
         const chain = this.chains.get(chainId);
-        if (!chain) return [];
-        const out = [];
-        for (const rid of chain.residueIds) {
-            const r = this.residues.get(rid);
-            if (!r) continue;
-            for (const aid of r.atomIds) out.push(aid);
+        return chain ? chain.residueIds.map((id) => this.residues.get(id)).filter(Boolean) : [];
+    }
+
+    getChainAtomIds(chainId) {
+        const ids = [];
+        for (const residue of this.getChainResidues(chainId)) ids.push(...residue.atomIds);
+        return ids;
+    }
+
+    getResidueRange({chainId, start = null, end = null} = {}) {
+        const residues = this.getChainResidues(chainId).sort(compareResidueOrder);
+        return residues.filter((residue) => {
+            const n = Number(residue.seqNum);
+            if (start !== null && Number.isFinite(n) && n < Number(start)) return false;
+            if (end !== null && Number.isFinite(n) && n > Number(end)) return false;
+            return true;
+        });
+    }
+
+    removeAtom(atomId) {
+        const atom = this.getAtom(atomId);
+        if (!atom) return false;
+        const residue = this.residues.get(atom.residueId);
+        if (residue) residue.atomIds = residue.atomIds.filter((id) => id !== atom.id);
+        this.bondGraph.removeAtom(atom.id);
+        this.coordinateStore.release(atom.positionIndex);
+        this.atoms.delete(atom.id);
+        this.bumpRevision('removeAtom');
+        return true;
+    }
+
+    bounds({atomIds = null} = {}) {
+        const indices = [];
+        const ids = atomIds || [...this.atoms.keys()];
+        for (const atomId of ids) {
+            const atom = this.getAtom(atomId);
+            if (atom) indices.push(atom.positionIndex);
         }
-        return out;
+        return this.coordinateStore.bounds(indices);
+    }
+
+    forEachAtom(fn) {
+        for (const atom of this.atoms.values()) fn(atom, this);
+    }
+
+    bumpRevision(_reason = '') {
+        this.revision += 1;
+        this.updatedAt = new Date().toISOString();
+        return this.revision;
+    }
+
+    toJSON({includeCoordinates = true} = {}) {
+        return {
+            id: this.id,
+            name: this.name,
+            revision: this.revision,
+            createdAt: this.createdAt,
+            updatedAt: this.updatedAt,
+            info: {...this.info},
+            chains: [...this.chains.values()].map((c) => ({...c, residueIds: [...c.residueIds]})),
+            residues: [...this.residues.values()].map((r) => ({...r, atomIds: [...r.atomIds]})),
+            atoms: [...this.atoms.values()].map((a) => ({...a})),
+            bonds: this.bondGraph.edges(),
+            secondary: this.secondary.toJSON(),
+            coordinates: includeCoordinates ? Array.from(this.coordinateStore.toTypedArray()) : null,
+        };
+    }
+
+    summary() {
+        return {
+            id: this.id,
+            name: this.name,
+            revision: this.revision,
+            atoms: this.atoms.size,
+            residues: this.residues.size,
+            chains: this.chains.size,
+            bonds: this.bondGraph.summary().bonds,
+            coordinates: this.coordinateStore.summary(),
+            secondary: this.secondary.summary(),
+        };
     }
 }

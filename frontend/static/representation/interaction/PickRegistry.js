@@ -1,4 +1,3 @@
-// 把可被点击/选中的 3D 对象，与业务层的目标信息绑定起来。
 export class PickRegistry {
     constructor() {
         this._objectToRecord = new WeakMap();
@@ -8,27 +7,40 @@ export class PickRegistry {
 
     register(object, target, {representationId = null} = {}) {
         if (!object || !target) return null;
+
+        const existingId = object.userData?.pickId;
+        if (existingId) this.unregister(existingId);
+
         const id = `pick_${this._nextId++}`;
         const record = {id, object, target, representationId};
         this._objectToRecord.set(object, record);
         this._records.set(id, record);
+
         if (!object.userData) object.userData = {};
         object.userData.pickId = id;
         object.userData.target = target;
+        object.userData.representationId = representationId || target.representationId || object.userData.representationId || null;
+        object.userData.proteinId = target.proteinId;
+
         return id;
     }
 
     unregister(objectOrId) {
         if (!objectOrId) return false;
-        let id = typeof objectOrId === 'string' ? objectOrId : objectOrId.userData?.pickId;
+
+        const id = typeof objectOrId === 'string' ? objectOrId : objectOrId.userData?.pickId;
         if (!id) return false;
+
         const record = this._records.get(id);
         if (!record) return false;
+
         this._records.delete(id);
+
         if (record.object?.userData?.pickId === id) {
             delete record.object.userData.pickId;
             delete record.object.userData.target;
         }
+
         return true;
     }
 
@@ -54,20 +66,29 @@ export class PickRegistry {
         });
     }
 
-    summary() {
-        const out = {total: this._records.size, byKind: {}, byRepresentation: {}};
-        for (const record of this._records.values()) {
-            const kind = record.target?.kind || 'unknown';
-            out.byKind[kind] = (out.byKind[kind] || 0) + 1;
-            const rep = record.representationId || 'none';
-            out.byRepresentation[rep] = (out.byRepresentation[rep] || 0) + 1;
+    clear({representationId = null, proteinId = null} = {}) {
+        const records = this.list({representationId, proteinId});
+        let count = 0;
+        for (const record of records) {
+            if (this.unregister(record.id)) count += 1;
         }
-        return out;
+        if (!representationId && !proteinId) {
+            this._records.clear();
+            this._objectToRecord = new WeakMap();
+        }
+        return count;
     }
 
-    clear() {
-        for (const id of [...this._records.keys()]) this.unregister(id);
-        this._records.clear();
-        this._nextId = 1;
+    summary() {
+        const out = {total: this._records.size, byKind: {}, byRepresentation: {}, byProtein: {}};
+        for (const record of this._records.values()) {
+            const kind = record.target?.kind || 'unknown';
+            const rep = record.representationId || record.target?.representationId || 'none';
+            const protein = record.target?.proteinId || 'none';
+            out.byKind[kind] = (out.byKind[kind] || 0) + 1;
+            out.byRepresentation[rep] = (out.byRepresentation[rep] || 0) + 1;
+            out.byProtein[protein] = (out.byProtein[protein] || 0) + 1;
+        }
+        return out;
     }
 }

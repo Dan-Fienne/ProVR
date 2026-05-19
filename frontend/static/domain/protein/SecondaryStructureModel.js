@@ -1,30 +1,44 @@
-import {SSEType} from "./ProteinConstants.js";
-
+import {SSEType} from './ProteinConstants.js';
 
 export class SecondaryStructureModel {
     constructor() {
-        this._residueSSE = new Map();
-        this._ranges = [];
+        this.byResidueId = new Map();
+        this.ranges = [];
     }
 
-    setResidueSSE(residueId, type = SSEType.LOOP) {
-        this._residueSSE.set(residueId, type);
+    setResidueSSE(residueId, sse = SSEType.LOOP, metadata = {}) {
+        this.byResidueId.set(residueId, {residueId, sse, metadata: {...metadata}});
     }
 
-    getResidueSSE(residueId) {
-        return this._residueSSE.get(residueId) || SSEType.LOOP;
+    getResidueSSE(residueId, fallback = SSEType.LOOP) {
+        return this.byResidueId.get(residueId)?.sse || fallback;
     }
 
-    addRange(chainId, startLabel, endLabel, type) {
-        this._ranges.push({chainId, startLabel, endLabel, type});
+    addRange(chainId, start, end, type, metadata = {}) {
+        const range = {chainId, start, end, type, metadata: {...metadata}};
+        this.ranges.push(range);
+        return range;
     }
 
-    get ranges() {
-        return this._ranges;
+    rangesForChain(chainId) {
+        return this.ranges.filter((r) => r.chainId === chainId);
     }
 
     clear() {
-        this._residueSSE.clear();
-        this._ranges.length = 0;
+        this.byResidueId.clear();
+        this.ranges.length = 0;
+    }
+
+    toJSON() {
+        return {
+            residues: [...this.byResidueId.values()].map((x) => ({...x, metadata: {...x.metadata}})),
+            ranges: this.ranges.map((x) => ({...x, metadata: {...x.metadata}})),
+        };
+    }
+
+    summary() {
+        const byType = {};
+        for (const row of this.byResidueId.values()) byType[row.sse] = (byType[row.sse] || 0) + 1;
+        return {residues: this.byResidueId.size, ranges: this.ranges.length, byType};
     }
 }

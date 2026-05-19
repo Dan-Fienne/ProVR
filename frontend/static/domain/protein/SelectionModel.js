@@ -1,21 +1,35 @@
 export class SelectionModel {
     constructor() {
-        this.atoms = new Set();
-        this.residues = new Set();
-        this.chains = new Set();
+        this.atomIds = new Set();
+        this.residueIds = new Set();
+        this.chainIds = new Set();
+        this.metadata = {};
+    }
+
+    set({atomIds = [], residueIds = [], chainIds = [], metadata = {}} = {}) {
+        this.atomIds = new Set(atomIds);
+        this.residueIds = new Set(residueIds);
+        this.chainIds = new Set(chainIds);
+        this.metadata = {...metadata};
     }
 
     clear() {
-        this.atoms.clear();
-        this.residues.clear();
-        this.chains.clear();
+        this.atomIds.clear();
+        this.residueIds.clear();
+        this.chainIds.clear();
+        this.metadata = {};
+    }
+
+    hasAny() {
+        return this.atomIds.size > 0 || this.residueIds.size > 0 || this.chainIds.size > 0;
     }
 
     toJSON() {
         return {
-            atoms: [...this.atoms],
-            residues: [...this.residues],
-            chains: [...this.chains],
+            atomIds: [...this.atomIds],
+            residueIds: [...this.residueIds],
+            chainIds: [...this.chainIds],
+            metadata: {...this.metadata},
         };
     }
 }

@@ -1,6 +1,6 @@
 import {RepresentationBase} from '../common/RepresentationBase.js';
 import {createStructureFilter} from '../../domain/protein/StructureFilter.js';
-import {targetFromBond} from '../interaction/PickTarget.js';
+import {targetFromResidue} from '../interaction/PickTarget.js';
 
 function centroid(model, atomIds = []) {
     const out = [0, 0, 0];
