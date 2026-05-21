@@ -3,110 +3,116 @@
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <title>ProVR</title>
+    <title>ProVR VR</title>
+    <script type="importmap">
+        {
+          "imports": {
+            "three": "/static/libs/three.module.js",
+            "three/addons/": "/static/libs/"
+          }
+        }
+    </script>
     <style>
-        :root {
-            --ink:#142033;
-            --muted:rgba(55,65,81,.62);
-            --glass:rgba(255,255,255,.68);
-            --line:rgba(255,255,255,.82);
-            --blue:#5fcaff;
-            --mint:#8ff4c8;
-            --violet:#aab6ff;
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: #f8fbff;
+            color: #071827;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif
         }
-        *{box-sizing:border-box}
-        html,body{
-            width:100%;height:100%;margin:0;overflow:hidden;
-            font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",system-ui,sans-serif;
-            color:var(--ink);
-            background:
-              radial-gradient(circle at 18% 14%, rgba(95,202,255,.32), transparent 30%),
-              radial-gradient(circle at 80% 20%, rgba(143,244,200,.28), transparent 30%),
-              radial-gradient(circle at 52% 88%, rgba(170,182,255,.22), transparent 34%),
-              linear-gradient(135deg,#fbfdff 0%,#edf8ff 48%,#f6fff8 100%);
+
+        #viewport {
+            position: fixed;
+            inset: 0
         }
-        body:before{
-            content:"";position:fixed;inset:-22%;
-            background:
-              linear-gradient(115deg,transparent 0 47%,rgba(255,255,255,.42) 50%,transparent 53%),
-              repeating-linear-gradient(90deg,rgba(37,99,235,.028) 0 1px,transparent 1px 128px);
-            transform:rotate(-7deg);pointer-events:none;
+
+        #landing {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            pointer-events: none
         }
-        #viewport{position:fixed;inset:0}
-        #landing{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none}
-        .hero{
-            width:min(720px,calc(100vw - 48px));
-            border:1px solid var(--line);
-            background:linear-gradient(180deg,rgba(255,255,255,.88),rgba(255,255,255,.58)),var(--glass);
-            box-shadow:0 38px 130px rgba(59,130,246,.16), inset 0 1px 0 rgba(255,255,255,.98);
-            backdrop-filter:blur(38px) saturate(150%);
-            border-radius:48px;
-            padding:48px;
-            text-align:center;
-            pointer-events:auto;
+
+        .card {
+            width: min(680px, calc(100vw - 44px));
+            padding: 44px;
+            border-radius: 42px;
+            text-align: center;
+            background: rgba(255, 255, 255, .72);
+            border: 1px solid rgba(255, 255, 255, .88);
+            box-shadow: 0 38px 130px rgba(15, 23, 42, .10);
+            backdrop-filter: blur(28px);
+            pointer-events: auto
         }
-        .logo{
-            width:96px;height:96px;border-radius:32px;margin:0 auto 28px;
-            background:
-              radial-gradient(circle at 28% 20%,#fff 0 12%,rgba(255,255,255,.42) 13% 20%,transparent 21%),
-              conic-gradient(from 210deg,var(--blue),var(--mint),var(--violet),var(--blue));
-            box-shadow:0 30px 80px rgba(95,202,255,.28),inset 0 1px 0 rgba(255,255,255,.95);
-            position:relative;
+
+        h1 {
+            margin: 0 0 14px;
+            font-size: 70px;
+            line-height: .9;
+            letter-spacing: -.08em;
+            font-weight: 850
         }
-        .logo:after{
-            content:"";position:absolute;inset:18px;border-radius:999px;
-            border:1px solid rgba(255,255,255,.88);background:rgba(255,255,255,.22);
+
+        p {
+            max-width: 560px;
+            margin: 0 auto 28px;
+            color: rgba(38, 56, 79, .72);
+            line-height: 1.62
         }
-        h1{
-            margin:0;font-size:clamp(52px,8vw,88px);line-height:.9;
-            letter-spacing:-.08em;font-weight:800;
+
+        button {
+            border: 1px solid rgba(255, 255, 255, .8);
+            border-radius: 999px;
+            padding: 18px 34px;
+            min-width: 220px;
+            background: rgba(255, 255, 255, .68);
+            backdrop-filter: blur(20px);
+            font-weight: 800;
+            font-size: 17px;
+            color: #071827;
+            box-shadow: 0 24px 80px rgba(15, 23, 42, .10);
+            cursor: pointer
         }
-        .tagline{
-            max-width:560px;margin:18px auto 34px;color:var(--muted);
-            font-size:17px;line-height:1.62;letter-spacing:-.015em;
+
+        button:hover {
+            background: rgba(255, 255, 255, .88)
         }
-        #enterVRButton{
-            appearance:none;border:1px solid rgba(255,255,255,.94);
-            border-radius:999px;padding:17px 34px;min-width:220px;min-height:62px;
-            background:linear-gradient(135deg,rgba(255,255,255,.99),rgba(224,247,255,.96),rgba(222,255,239,.94));
-            color:#071c2c;
-            font:780 17px -apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",system-ui,sans-serif;
-            box-shadow:0 24px 80px rgba(37,99,235,.20),inset 0 1px 0 rgba(255,255,255,1);
-            cursor:pointer;transition:transform .18s ease,box-shadow .18s ease;
+
+        #status {
+            margin-top: 18px;
+            font-size: 13px;
+            color: rgba(38, 56, 79, .60);
+            min-height: 20px
         }
-        #enterVRButton:hover{
-            transform:translateY(-2px) scale(1.012);
-            box-shadow:0 30px 92px rgba(37,99,235,.26),inset 0 1px 0 rgba(255,255,255,1);
+
+        #status[data-kind="error"] {
+            color: #c73550
         }
-        #status{
-            margin-top:20px;color:rgba(55,65,81,.54);
-            font-size:13px;min-height:20px;
+
+        #status[data-kind="ok"] {
+            color: #0f8a5c
         }
-        #status[data-kind="error"]{color:#d33c54}
-        #status[data-kind="ok"]{color:#138457}
-        #summary{display:none}
-        .micro{
-            position:fixed;left:24px;bottom:22px;
-            color:rgba(55,65,81,.36);font-size:12px;
-            letter-spacing:.08em;text-transform:uppercase;
+
+        #summary {
+            display: none
         }
     </style>
 </head>
 <body>
-<main id="viewport"></main>
+<div id="viewport"></div>
 <section id="landing">
-    <div class="hero">
-        <div class="logo"></div>
+    <div class="card">
         <h1>ProVR</h1>
-        <div class="tagline">
-            Enter VR first. Load your protein inside the spatial workbench, then inspect surfaces, select regions, edit fragments, and capture design intent.
-        </div>
+        <p>Enter VR, summon a transparent horizontal liquid-glass menu, and operate proteins with visible ray
+            feedback.</p>
         <button id="enterVRButton">Enter VR</button>
-        <div id="status" data-kind="info">Protein loading happens inside VR.</div>
+        <div id="status" data-kind="info">Menu summons 0.7m in front of your current view.</div>
     </div>
 </section>
 <pre id="summary">{}</pre>
-<div class="micro">Spatial Protein Design</div>
-<script type="module" src="../static/vr/workspace/ProVRVRWorkspaceBootstrap.js"></script>
+<script type="module" src="../static/vr/workspace/ProVRVRWorkspace.js"></script>
 </body>
 </html>

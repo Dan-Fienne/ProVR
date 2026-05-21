@@ -1,0 +1,8 @@
+{
+  "generic-hand": {
+    "path": "generic-hand/profile.json"
+  },
+  "generic-trigger": {
+    "path": "generic-trigger/profile.json"
+  }
+}

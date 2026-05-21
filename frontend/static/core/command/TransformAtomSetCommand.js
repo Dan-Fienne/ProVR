@@ -7,9 +7,7 @@ function toArray3(value, fallback = [0, 0, 0]) {
 
 function clonePositionsMap(value) {
     if (!value) return null;
-    if (value instanceof Map) {
-        return new Map([...value.entries()].map(([atomId, p]) => [atomId, [...p]]));
-    }
+    if (value instanceof Map) return new Map([...value.entries()].map(([atomId, p]) => [atomId, [...p]]));
     if (Array.isArray(value)) {
         return new Map(value.map((entry) => {
             if (Array.isArray(entry) && entry.length >= 2) return [entry[0], [...entry[1]]];
@@ -31,9 +29,7 @@ function mat4TransformPoint(m, p) {
     ];
 }
 
-function unique(values) {
-    return [...new Set(values.filter((v) => v != null))];
-}
+function unique(values) { return [...new Set(values.filter((v) => v != null))]; }
 
 function collectResidueAndChainIds(model, atomIds) {
     const residueIds = [];
@@ -45,10 +41,7 @@ function collectResidueAndChainIds(model, atomIds) {
         const residue = model.residues.get(atom.residueId);
         if (residue) chainIds.push(residue.chainId);
     }
-    return {
-        residueIds: unique(residueIds),
-        chainIds: unique(chainIds),
-    };
+    return {residueIds: unique(residueIds), chainIds: unique(chainIds)};
 }
 
 function snapshotPositions(model, atomIds) {
@@ -66,31 +59,16 @@ function positionsToObject(map) {
     return obj;
 }
 
-/**
- * TransformAtomSetCommand is the low-level editing command for ProVR.
- *
- * Every atom/residue/range/component drag should eventually resolve to a set of atomIds
- * and execute this command. It modifies ProteinModel/CoordinateStore, not Three.js mesh
- * positions. Therefore exported PDB coordinates change after execution.
- */
-export class TransformAtomSetCommand {
-    constructor({
-                    proteinId,
-                    atomIds,
-                    translation = null,
-                    matrix4 = null,
-                    previousPositions = null,
-                    nextPositions = null,
-                    phase = 'final',
-                    source = 'command',
-                    intent = null,
-                    description = '',
-                } = {}) {
-        if (!proteinId) throw new Error('[TransformAtomSetCommand] proteinId is required');
-        if (!Array.isArray(atomIds) || atomIds.length === 0) {
-            throw new Error('[TransformAtomSetCommand] atomIds must be a non-empty array');
-        }
+function translationMatrix(t) {
+    return [1,0,0,0, 0,1,0,0, 0,0,1,0, t[0],t[1],t[2],1];
+}
 
+function inverseTranslation(t) { return [-t[0], -t[1], -t[2]]; }
+
+export class TransformAtomSetCommand {
+    constructor({proteinId, atomIds, translation = null, matrix4 = null, previousPositions = null, nextPositions = null, phase = 'final', source = 'command', intent = null, description = ''} = {}) {
+        if (!proteinId) throw new Error('[TransformAtomSetCommand] proteinId is required');
+        if (!Array.isArray(atomIds) || atomIds.length === 0) throw new Error('[TransformAtomSetCommand] atomIds must be a non-empty array');
         this.type = 'transformAtomSet';
         this.proteinId = proteinId;
         this.atomIds = unique(atomIds);
@@ -102,24 +80,15 @@ export class TransformAtomSetCommand {
         this.source = source;
         this.intent = intent;
         this.description = description;
-
         this._executed = false;
     }
 
     execute(ctx) {
         const model = ctx.proteinSystem.getProtein(this.proteinId);
         if (!model) return false;
-
-        if (!this.previousPositions) {
-            this.previousPositions = snapshotPositions(model, this.atomIds);
-        }
-
-        if (!this.nextPositions) {
-            this.nextPositions = this._computeNextPositions(this.previousPositions);
-        }
-
+        if (!this.previousPositions) this.previousPositions = snapshotPositions(model, this.atomIds);
+        if (!this.nextPositions) this.nextPositions = this._computeNextPositions(this.previousPositions);
         if (!this.nextPositions || this.nextPositions.size === 0) return false;
-
         this._applyPositions(model, this.nextPositions);
         this._executed = true;
         this._emit(ctx, model, 'execute');
@@ -160,37 +129,38 @@ export class TransformAtomSetCommand {
 
     _computeNextPositions(previousPositions) {
         const out = new Map();
-
         if (this.matrix4) {
-            for (const [atomId, p] of previousPositions.entries()) {
-                out.set(atomId, mat4TransformPoint(this.matrix4, p));
-            }
+            for (const [atomId, p] of previousPositions.entries()) out.set(atomId, mat4TransformPoint(this.matrix4, p));
             return out;
         }
-
         if (this.translation) {
             const t = this.translation;
-            for (const [atomId, p] of previousPositions.entries()) {
-                out.set(atomId, [p[0] + t[0], p[1] + t[1], p[2] + t[2]]);
-            }
+            for (const [atomId, p] of previousPositions.entries()) out.set(atomId, [p[0] + t[0], p[1] + t[1], p[2] + t[2]]);
             return out;
         }
-
         return out;
     }
 
     _applyPositions(model, positions) {
-        for (const [atomId, p] of positions.entries()) {
-            model.setAtomPosition(atomId, p[0], p[1], p[2]);
+        for (const [atomId, p] of positions.entries()) model.setAtomPosition(atomId, p[0], p[1], p[2]);
+    }
+
+    _eventTransform(action) {
+        if (!this.translation && !this.matrix4) return {};
+        if (this.translation) {
+            const t = action === 'undo' ? inverseTranslation(this.translation) : [...this.translation];
+            const matrix = translationMatrix(t);
+            return {translation: t, matrix, transform: {translation: {x: t[0], y: t[1], z: t[2]}, matrix}};
         }
+        // Matrix undo inversion is intentionally not guessed here. Rigid VR drags pass translation.
+        return action === 'undo' ? {} : {matrix: [...this.matrix4], transform: {matrix: [...this.matrix4]}};
     }
 
     _emit(ctx, model, action) {
         const revision = model.bumpRevision();
         const {residueIds, chainIds} = collectResidueAndChainIds(model, this.atomIds);
-
-        ctx.eventBus?.emit?.(EventTypes.ATOM_SET_TRANSFORMED, {
-            type: EventTypes.ATOM_SET_TRANSFORMED,
+        const transformPayload = this._eventTransform(action);
+        const payload = {
             commandType: this.type,
             action,
             proteinId: this.proteinId,
@@ -201,21 +171,9 @@ export class TransformAtomSetCommand {
             source: this.source,
             intent: this.intent,
             revision,
-        });
-
-        // Compatibility with earlier representations that only listen to atomPositionChanged.
-        ctx.eventBus?.emit?.(EventTypes.ATOM_POSITION_CHANGED, {
-            type: EventTypes.ATOM_POSITION_CHANGED,
-            commandType: this.type,
-            action,
-            proteinId: this.proteinId,
-            atomIds: [...this.atomIds],
-            residueIds,
-            chainIds,
-            phase: this.phase,
-            source: this.source,
-            intent: this.intent,
-            revision,
-        });
+            ...transformPayload,
+        };
+        ctx.eventBus?.emit?.(EventTypes.ATOM_SET_TRANSFORMED, {type: EventTypes.ATOM_SET_TRANSFORMED, ...payload});
+        ctx.eventBus?.emit?.(EventTypes.ATOM_POSITION_CHANGED, {type: EventTypes.ATOM_POSITION_CHANGED, ...payload});
     }
 }

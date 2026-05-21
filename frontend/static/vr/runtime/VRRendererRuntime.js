@@ -1,224 +1,102 @@
 import * as THREE from '../../libs/three.module.js';
-import {OrbitControls} from '../../libs/controls/OrbitControls.js';
 
-/**
- * VRRendererRuntime owns only rendering/runtime concerns:
- * scene, camera, renderer, WebXR session, desktop orbit controls, frame loop and centering.
- *
- * It does not know ProteinSystem, CommandManager, RepresentationManager or UI actions.
- */
 export class VRRendererRuntime {
-    constructor({
-                    container,
-                    background = 0x030712,
-                    cameraPosition = [0, 0, 120],
-                    antialias = true,
-                } = {}) {
-        this.container = typeof container === 'string' ? document.querySelector(container) : container;
-        if (!this.container) throw new Error('[VRRendererRuntime] container is required');
+    constructor({container, background = 0xf7fbff, cameraPosition = [0, 0, 3.2]} = {}) {
+        if (!container) throw new Error('[VRRendererRuntime] container required');
+        this.container = container;
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(background);
 
-        this.background = background;
-        this.cameraPosition = cameraPosition;
-        this.antialias = antialias;
+        this.camera = new THREE.PerspectiveCamera(60, 1, 0.01, 2000);
+        this.camera.position.set(...cameraPosition);
 
-        this.scene = null;
-        this.camera = null;
-        this.renderer = null;
-        this.controls = null;
-        this.stageRoot = null;
+        this.renderer = new THREE.WebGLRenderer({antialias: true, alpha: true});
+        this.renderer.xr.enabled = true;
 
-        this._frameHandlers = new Set();
-        this._running = false;
-        this._initialized = false;
-        this._resizeHandler = () => this.resize();
+        // Critical for real headsets: use floor-aware stable local space when available.
+        // This must be set before the session starts in three.js.
+        try { this.renderer.xr.setReferenceSpaceType?.('local-floor'); } catch {}
+
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
+        container.appendChild(this.renderer.domElement);
+
+        this.clock = new THREE.Clock();
+        this.frameHandlers = new Set();
+        this.lastXRFrame = null;
+        this.lastFrameTime = 0;
+        this._setupLights();
+        this._setupResize();
     }
 
-    async init() {
-        if (this._initialized) return this;
+    async init() { return this; }
 
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(this.background);
-        this.scene.fog = new THREE.FogExp2(0x030712, 0.0015);
+    _setupLights() {
+        this.scene.add(new THREE.HemisphereLight(0xffffff, 0xd7e3ef, 1.0));
+        const key = new THREE.DirectionalLight(0xffffff, 0.7);
+        key.position.set(3, 4, 5);
+        this.scene.add(key);
+    }
 
-        const {width, height} = this._measure();
-        this.camera = new THREE.PerspectiveCamera(54, width / height, 0.01, 100000);
-        this.camera.position.set(...this.cameraPosition);
-        this.scene.add(this.camera);
+    _setupResize() {
+        const resize = () => {
+            const w = this.container.clientWidth || window.innerWidth;
+            const h = this.container.clientHeight || window.innerHeight;
+            this.camera.aspect = w / Math.max(h, 1);
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(w, h);
+        };
+        window.addEventListener('resize', resize);
+        resize();
+    }
 
-        this.renderer = new THREE.WebGLRenderer({antialias: this.antialias, alpha: false});
-        this.renderer.setPixelRatio(window.devicePixelRatio || 1);
-        this.renderer.setSize(width, height);
-        this.renderer.xr.enabled = true;
-        this.renderer.xr.setReferenceSpaceType?.('local-floor');
-
-        if ('outputColorSpace' in this.renderer && THREE.SRGBColorSpace) {
-            this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-        }
-
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-        this.container.innerHTML = '';
-        this.container.appendChild(this.renderer.domElement);
-
-        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.08;
-
-        this._buildStage();
-        window.addEventListener('resize', this._resizeHandler);
-        this._initialized = true;
-        return this;
+    onFrame(fn) {
+        this.frameHandlers.add(fn);
+        return () => this.frameHandlers.delete(fn);
     }
 
     start() {
-        if (!this.renderer || !this.scene || !this.camera) throw new Error('[VRRendererRuntime] call init() first');
-        if (this._running) return;
-        this._running = true;
         this.renderer.setAnimationLoop((time, frame) => {
-            if (!this.renderer.xr.isPresenting && this.controls) this.controls.update();
-            for (const fn of this._frameHandlers) fn({time, frame, runtime: this});
+            this.lastXRFrame = frame || null;
+            this.lastFrameTime = time || performance.now();
+            const dt = this.clock.getDelta();
+            for (const fn of this.frameHandlers) fn({time, frame, dt});
             this.renderer.render(this.scene, this.camera);
         });
     }
 
-    stop() {
-        this._running = false;
-        this.renderer?.setAnimationLoop(null);
-    }
-
-    onFrame(fn) {
-        if (typeof fn !== 'function') throw new Error('[VRRendererRuntime] frame handler must be a function');
-        this._frameHandlers.add(fn);
-        return () => this._frameHandlers.delete(fn);
-    }
-
     async enterVR() {
-        if (!navigator.xr) {
-            throw new Error('This browser does not expose WebXR. Use a WebXR-capable headset browser.');
-        }
-
-        if (this.renderer.xr.getSession()) return this.renderer.xr.getSession();
-
-        const supported = await navigator.xr.isSessionSupported?.('immersive-vr');
-        if (supported === false) throw new Error('immersive-vr is not supported in this browser/device.');
-
+        if (!navigator.xr) throw new Error('WebXR is not available in this browser.');
+        try { this.renderer.xr.setReferenceSpaceType?.('local-floor'); } catch {}
         const session = await navigator.xr.requestSession('immersive-vr', {
             optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
         });
-
-        try {
-            await this.renderer.xr.setSession(session);
-            return session;
-        } catch (err) {
-            try { await session.end(); } catch (_) {}
-            throw err;
-        }
+        await this.renderer.xr.setSession(session);
+        return session;
     }
 
-    resize() {
-        if (!this.camera || !this.renderer) return;
-        const {width, height} = this._measure();
-        this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(width, height);
-    }
+    getViewerPose() {
+        const camera = this.renderer.xr?.isPresenting
+            ? this.renderer.xr.getCamera(this.camera)
+            : this.camera;
 
-    centerOnModel(model, {padding = 1.45} = {}) {
-        if (!model || model.atoms.size === 0) return null;
+        camera.updateMatrixWorld(true);
 
-        const box = new THREE.Box3();
-        const v = new THREE.Vector3();
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        camera.getWorldPosition(position);
+        camera.getWorldQuaternion(quaternion);
 
-        for (const atom of model.atoms.values()) {
-            const p = model.getAtomPosition(atom.id);
-            if (!p) continue;
-            v.set(p[0], p[1], p[2]);
-            box.expandByPoint(v);
-        }
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion).normalize();
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize();
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion).normalize();
 
-        if (box.isEmpty()) return null;
-
-        const center = new THREE.Vector3();
-        const size = new THREE.Vector3();
-        box.getCenter(center);
-        box.getSize(size);
-
-        const radius = Math.max(size.x, size.y, size.z, 1) * padding;
-        const fov = THREE.MathUtils.degToRad(this.camera.fov);
-        const distance = radius / (2 * Math.tan(fov / 2));
-
-        this.camera.position.set(center.x, center.y, center.z + Math.max(distance, 10));
-        this.camera.near = Math.max(0.01, distance / 1000);
-        this.camera.far = Math.max(1000, distance * 24);
-        this.camera.updateProjectionMatrix();
-
-        if (this.controls) {
-            this.controls.target.copy(center);
-            this.controls.update();
-        }
-
-        return {box, center, size, radius, distance};
+        return {camera, position, quaternion, forward, up, right, isPresenting: !!this.renderer.xr?.isPresenting};
     }
 
     dispose() {
-        this.stop();
-        window.removeEventListener('resize', this._resizeHandler);
-        this.controls?.dispose?.();
-        this.renderer?.dispose?.();
-        this.container.innerHTML = '';
-        this._frameHandlers.clear();
-    }
-
-    _measure() {
-        const rect = this.container.getBoundingClientRect();
-        return {
-            width: Math.max(1, rect.width || window.innerWidth),
-            height: Math.max(1, rect.height || window.innerHeight),
-        };
-    }
-
-    _buildStage() {
-        this.stageRoot = new THREE.Group();
-        this.stageRoot.name = 'vr:stageRoot';
-        this.scene.add(this.stageRoot);
-
-        const hemi = new THREE.HemisphereLight(0xe0f2fe, 0x111827, 0.82);
-        hemi.name = 'vr:hemisphereLight';
-        this.stageRoot.add(hemi);
-
-        const key = new THREE.DirectionalLight(0xffffff, 1.45);
-        key.position.set(4, 6, 6);
-        key.castShadow = true;
-        key.name = 'vr:keyLight';
-        this.stageRoot.add(key);
-
-        const rim = new THREE.DirectionalLight(0x93c5fd, 0.72);
-        rim.position.set(-5, 3, -4);
-        rim.name = 'vr:rimLight';
-        this.stageRoot.add(rim);
-
-        const floor = new THREE.Mesh(
-            new THREE.CircleGeometry(90, 128),
-            new THREE.MeshStandardMaterial({
-                color: 0x07111f,
-                metalness: 0.0,
-                roughness: 0.74,
-                transparent: true,
-                opacity: 0.68,
-            })
-        );
-        floor.name = 'vr:softFloor';
-        floor.rotation.x = -Math.PI / 2;
-        floor.position.y = -18;
-        floor.receiveShadow = true;
-        this.stageRoot.add(floor);
-
-        const grid = new THREE.GridHelper(180, 36, 0x334155, 0x1e293b);
-        grid.name = 'vr:floorGrid';
-        grid.position.y = -17.985;
-        grid.material.transparent = true;
-        grid.material.opacity = 0.20;
-        this.stageRoot.add(grid);
+        this.renderer.setAnimationLoop(null);
+        this.renderer.dispose();
+        this.container.removeChild(this.renderer.domElement);
     }
 }

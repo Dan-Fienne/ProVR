@@ -1,142 +1,112 @@
 import * as THREE from '../../libs/three.module.js';
 
-function computeModelBounds(model) {
-    if (!model || !model.atoms?.size) return null;
+export const ProteinScalePreset = Object.freeze({overview: 1.0, residue: 1.75, atom: 2.65, pocket: 2.15});
 
+function bounds(model) {
+    if (!model?.atoms?.size) return null;
     const min = new THREE.Vector3(Infinity, Infinity, Infinity);
     const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
     const v = new THREE.Vector3();
-    let count = 0;
-
     for (const atom of model.atoms.values()) {
         const p = model.getAtomPosition(atom.id);
         if (!p) continue;
         v.set(p[0], p[1], p[2]);
-        min.min(v);
-        max.max(v);
-        count += 1;
+        min.min(v); max.max(v);
     }
-
-    if (!count) return null;
-
     const box = new THREE.Box3(min, max);
     const center = new THREE.Vector3();
     const size = new THREE.Vector3();
-    box.getCenter(center);
-    box.getSize(size);
-
-    return {
-        box,
-        center,
-        size,
-        maxDim: Math.max(size.x, size.y, size.z, 1),
-        count,
-    };
+    box.getCenter(center); box.getSize(size);
+    return {box, center, size, maxDim: Math.max(size.x, size.y, size.z, 1)};
 }
 
-/**
- * Owns the protein stage transform in VR.
- *
- * RepresentationManager receives `stageGroup` as scene so all representation roots
- * are added under a single movable/scalable protein workbench group.
- */
 export class VRProteinWorkbench {
-    constructor({runtime, stageGroup} = {}) {
-        if (!runtime) throw new Error('[VRProteinWorkbench] runtime is required');
-        if (!stageGroup) throw new Error('[VRProteinWorkbench] stageGroup is required');
-
+    constructor({runtime, stageGroup, targetVisualSize = 1.08} = {}) {
         this.runtime = runtime;
         this.stageGroup = stageGroup;
-        this.targetVisualSize = 1.10;
-        this.distance = 1.85;
-        this.yOffset = -0.10;
-        this.lastPlacement = null;
-
-        this._halo = null;
-        this._ensureHalo();
+        this.targetVisualSize = targetVisualSize;
+        this.baseScale = 1;
+        this.viewScale = 1;
+        this.model = null;
+        this.bounds = null;
+        this._placementOff = null;
     }
 
-    placeModel(model) {
-        const bounds = computeModelBounds(model);
-        if (!bounds) return null;
+    placeModelInFront(model, {distance = 1.45, y = -0.08, resetRotation = true, minDistance = 0.85} = {}) {
+        const b = bounds(model);
+        if (!b) return null;
+        this.model = model;
+        this.bounds = b;
 
-        const scale = this.targetVisualSize / bounds.maxDim;
-        this.stageGroup.scale.setScalar(scale);
+        if (resetRotation) this.stageGroup.rotation.set(0, 0, 0);
+        this.baseScale = this.targetVisualSize / b.maxDim;
+        this._applyScale();
 
-        const target = this._targetInFrontOfViewer();
-        this.stageGroup.position.copy(target).sub(bounds.center.clone().multiplyScalar(scale));
+        const pose = this.runtime.getViewerPose();
+        const d = Math.max(minDistance, Number(distance) || 1.45);
+        const target = pose.position.clone()
+            .addScaledVector(pose.forward, d)
+            .addScaledVector(pose.up, y);
 
-        this._updateHalo(bounds, scale);
-        this.lastPlacement = {bounds, scale, target};
-        return this.lastPlacement;
+        this.stageGroup.position.copy(target).sub(b.center.clone().multiplyScalar(this.stageGroup.scale.x));
+        return target;
     }
 
-    bringProteinHere(model) {
-        return this.placeModel(model);
+    /**
+     * Real headset fix:
+     * In Pico/Quest/etc, viewer pose may be stale before the first XR frames settle.
+     * We therefore place repeatedly inside the XR animation loop for a short window.
+     */
+    placeWhenReady(model, {distance = 1.45, y = -0.08, resetRotation = true, frames = 36, intervalMs = 0} = {}) {
+        this._placementOff?.();
+        this._placementOff = null;
+
+        let count = 0;
+        const place = () => {
+            this.placeModelInFront(model, {distance, y, resetRotation: count === 0 ? resetRotation : false});
+            count += 1;
+            if (count >= frames) {
+                this._placementOff?.();
+                this._placementOff = null;
+            }
+        };
+
+        // Browser preview path.
+        requestAnimationFrame(place);
+        setTimeout(place, 80);
+        setTimeout(place, 180);
+
+        // XR headset path.
+        this._placementOff = this.runtime.onFrame?.(() => place()) || null;
     }
 
-    reset(model) {
-        this.stageGroup.rotation.set(0, 0, 0);
-        return this.placeModel(model);
+    bringProteinHere() {
+        if (this.model) this.placeWhenReady(this.model, {resetRotation: false, frames: 18});
     }
 
-    rotate(deltaYaw = 0, deltaPitch = 0) {
-        this.stageGroup.rotation.y += deltaYaw;
-        this.stageGroup.rotation.x += deltaPitch;
+    fitProtein() {
+        this.viewScale = 1;
+        this._applyScale();
+        this.bringProteinHere();
+        return this.viewScale;
     }
+
+    setProteinViewScale(scale) {
+        this.viewScale = THREE.MathUtils.clamp(Number(scale) || 1, 0.35, 5.0);
+        this._applyScale();
+        return this.viewScale;
+    }
+
+    zoomProteinView(factor) { return this.setProteinViewScale(this.viewScale * factor); }
+
+    _applyScale() { this.stageGroup.scale.setScalar(this.baseScale * this.viewScale); }
 
     summary() {
         return {
-            targetVisualSize: this.targetVisualSize,
-            distance: this.distance,
-            yOffset: this.yOffset,
-            placed: !!this.lastPlacement,
-            scale: this.lastPlacement?.scale || null,
+            baseScale: this.baseScale,
+            viewScale: this.viewScale,
+            finalScale: this.stageGroup.scale.x,
+            note: 'visual scale only; placement follows current XR viewer pose after loading',
         };
-    }
-
-    _targetInFrontOfViewer() {
-        const camera = this.runtime.renderer?.xr?.isPresenting
-            ? this.runtime.renderer.xr.getCamera(this.runtime.camera)
-            : this.runtime.camera;
-
-        const pos = new THREE.Vector3();
-        const dir = new THREE.Vector3();
-        const up = new THREE.Vector3(0, 1, 0);
-        const quat = new THREE.Quaternion();
-
-        camera.getWorldPosition(pos);
-        camera.getWorldDirection(dir);
-        camera.getWorldQuaternion(quat);
-        up.applyQuaternion(quat).normalize();
-
-        return pos
-            .add(dir.multiplyScalar(this.distance))
-            .add(up.multiplyScalar(this.yOffset));
-    }
-
-    _ensureHalo() {
-        if (this._halo) return;
-        this._halo = new THREE.Mesh(
-            new THREE.RingGeometry(0.55, 0.62, 96),
-            new THREE.MeshBasicMaterial({
-                color: 0x7dd3fc,
-                transparent: true,
-                opacity: 0.20,
-                side: THREE.DoubleSide,
-                depthWrite: false,
-            })
-        );
-        this._halo.name = 'vr:proteinWorkbenchHalo';
-        this._halo.rotation.x = -Math.PI / 2;
-        this._halo.position.y = -0.56;
-        this.stageGroup.add(this._halo);
-    }
-
-    _updateHalo(bounds, scale) {
-        this._ensureHalo();
-        const radius = Math.max(bounds.size.x, bounds.size.z, 1) * scale * 0.55;
-        this._halo.scale.setScalar(Math.max(0.8, radius));
-        this._halo.visible = true;
     }
 }

@@ -72,7 +72,7 @@ function targetFromLegacyHit(hit) {
 }
 
 /**
- * Unified EditTargetResolver for mouse, VR, hand tracking and sandbox.
+ * Unified EditTargetResolver for mouse, VR, generic-hand tracking and sandbox.
  *
  * Input can be:
  * - legacy hit from AtomRayPicker: {model, atomId, residueId, chainId...}
