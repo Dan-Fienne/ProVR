@@ -60,7 +60,7 @@ def list_user_files(db: Session, user_id: int) -> Sequence[models.UserFile]:
     )
 
 
-def add_user_file(
+def create_user_file(
     db: Session,
     user_id: int,
     *,
@@ -86,6 +86,31 @@ def add_user_file(
     _commit(db)
     db.refresh(rec)
     return rec
+
+
+def add_user_file(
+    db: Session,
+    user_id: int,
+    *,
+    original_filename: str,
+    file_kind: Optional[str],
+    storage_backend: str,
+    storage_path: str,
+    size: int,
+    content_type: Optional[str],
+    checksum_sha256: Optional[str],
+) -> models.UserFile:
+    return create_user_file(
+        db,
+        user_id,
+        original_filename=original_filename,
+        file_kind=file_kind,
+        storage_backend=storage_backend,
+        storage_path=storage_path,
+        size=size,
+        content_type=content_type,
+        checksum_sha256=checksum_sha256,
+    )
 
 
 def get_user_file_by_id(db: Session, user_id: int, file_id: int) -> Optional[models.UserFile]:

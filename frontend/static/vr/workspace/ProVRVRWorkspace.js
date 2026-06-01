@@ -3,6 +3,8 @@ import * as THREE from '../../libs/three.module.js';
 import {ProVRAppContext} from '../../app/ProVRAppContext.js';
 import {EventTypes} from '../../core/event/EventTypes.js';
 import {downloadText} from '../../domain/io/PDBExporter.js';
+import {FileApiClient} from '../../services/FileApiClient.js';
+import {ProteinFileResolver} from '../../services/ProteinFileResolver.js';
 
 import {StructureFeature} from '../../features/structure/StructureFeature.js';
 import {RepresentationFeature} from '../../features/representation/RepresentationFeature.js';
@@ -44,6 +46,9 @@ export class ProVRVRWorkspace {
         this.proteinStageGroup.name = 'provr-protein-stage';
         this.demoPdbIds = ['1CWA', '4EU4', '4EU2'];
         this.currentPdbIds = [...this.demoPdbIds];
+        this.userFiles = [];
+        this.fileApiClient = new FileApiClient();
+        this.proteinFileResolver = new ProteinFileResolver({fileApiClient: this.fileApiClient});
         this._loadedOnce = new Set();
     }
 
@@ -108,12 +113,9 @@ export class ProVRVRWorkspace {
     async refreshPdbList() {
         const ids = [...this.demoPdbIds];
         try {
-            const res = await fetch('/api/my-files', {cache: 'no-store'});
-            if (res.ok) {
-                const data = await res.json();
-                const rows = Array.isArray(data) ? data : (data.files || data.items || []);
-                ids.push(...rows.map((r) => r.pdbId || r.id || r.name || r.filename).filter(Boolean).map((s) => String(s).replace(/\.pdb$/i, '').toUpperCase()));
-            }
+            const rows = await this.fileApiClient.listFiles();
+            this.userFiles = rows;
+            ids.push(...rows.map((r) => r.pdbId || r.original_filename || r.filename || r.name).filter(Boolean).map((s) => String(s).replace(/\.pdb$/i, '').toUpperCase()));
         } catch {}
         try {
             const res = await fetch('/static/assets/demo/pdb-index.json', {cache: 'no-store'});
@@ -133,24 +135,10 @@ export class ProVRVRWorkspace {
         if (!normalized) return;
         this.setStatus(`Loading ${normalized}...`, 'info');
 
-        let text = null;
         const lower = normalized.toLowerCase();
-        const candidates = [
-            `/static/assets/demo/${lower}.pdb`,
-            `/static/assets/demo/${normalized}.pdb`,
-            `/user-files/${encodeURIComponent(normalized)}.pdb`,
-            `/user-files/${encodeURIComponent(lower)}.pdb`,
-            `/api/pdb/${encodeURIComponent(normalized)}`,
-            `/api/pdb/${encodeURIComponent(lower)}`,
-        ];
-        for (const url of candidates) {
-            try {
-                const res = await fetch(url, {cache: 'no-store'});
-                if (res.ok) { text = await res.text(); break; }
-            } catch {}
-        }
+        const text = await this.proteinFileResolver.resolvePdbText(normalized, {userFiles: this.userFiles});
         if (!text) {
-            this.setStatus(`Could not load ${normalized}. Put file at /static/assets/demo/${lower}.pdb or expose it through backend.`, 'error');
+            this.setStatus(`Could not load ${normalized}. Put file at /static/assets/demo/${lower}.pdb or upload it to your files.`, 'error');
             return;
         }
 

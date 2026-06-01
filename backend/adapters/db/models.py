@@ -49,7 +49,7 @@ class UserProvider(Base):
     )
 
 
-class PDBFile(Base):
+class UserFile(Base):
     __tablename__ = "user_files"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -72,3 +72,6 @@ class PDBFile(Base):
         Index("idx_user_uploaded", "user_id", "uploaded_at"),
         Index("idx_user_kind", "user_id", "file_kind"),
     )
+
+
+PDBFile = UserFile

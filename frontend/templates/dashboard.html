@@ -212,50 +212,66 @@
         </ul>
     </section>
 </main>
-<script>
+<script type="module">
+    import {FileApiClient} from "/static/services/FileApiClient.js";
+
     if (!localStorage.token) location.href = "/";
-    const hdr = {"Authorization": "Bearer " + localStorage.token};
-
-    function parseJwt(t) {
-        return JSON.parse(atob(t.split('.')[1]));
-    }
-
-    let uid = "me";
-    try {
-        uid = parseJwt(localStorage.token).uid;
-    } catch (e) {
-        uid = "me";
-    }
+    const api = new FileApiClient();
     const list = document.getElementById("fileList"), msg = document.getElementById("msg");
 
     async function load() {
-        const r = await fetch("/api/my-files", {headers: hdr});
-        if (!r.ok) {
+        let files = [];
+        try {
+            files = await api.listFiles();
+        } catch (err) {
             localStorage.removeItem("token");
             location.href = "/";
             return
         }
-        const a = await r.json();
-        if (!a.length) {
+        if (!files.length) {
             list.innerHTML = "<li><span>暂无文件</span></li>";
             return
         }
         list.innerHTML = "";
-        a.forEach(f => {
+        files.forEach(f => {
+            const filename = f.original_filename || f.filename || "";
             const li = document.createElement("li");
-            li.innerHTML = `<a href="/user-files/${uid}/${encodeURIComponent(f)}" target="_blank">${f}</a>
+            li.innerHTML = `<a href="#" data-id="${f.id || ''}" data-f="${encodeURIComponent(filename)}">${filename}</a>
                   <button class="del" title="删除" data-f="${encodeURIComponent(f)}">🗑</button>`;
             list.appendChild(li);
+            const delButton = li.querySelector("button.del");
+            delButton.dataset.id = f.id || "";
+            delButton.dataset.f = encodeURIComponent(filename);
+        });
+        list.querySelectorAll("a[data-f]").forEach(link => {
+            link.onclick = async e => {
+                e.preventDefault();
+                const id = e.currentTarget.dataset.id;
+                const filename = decodeURIComponent(e.currentTarget.dataset.f);
+                try {
+                    const text = await api.getFileText(id ? {fileId: id} : {filename});
+                    const blob = new Blob([text], {type: "chemical/x-pdb"});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = filename || "provr-file.pdb";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                } catch (err) {
+                    alert("下载失败: " + err.message);
+                }
+            };
         });
         list.querySelectorAll("button.del").forEach(btn => {
             btn.onclick = async e => {
+                const id = e.target.dataset.id;
                 const fn = decodeURIComponent(e.target.dataset.f);
                 if (!confirm("确定删除 '" + fn + "' ?")) return;
-                const res = await fetch("/api/delete-pdb?filename=" + encodeURIComponent(fn),
-                    {method: "DELETE", headers: hdr});
-                if (res.ok) {
+                try {
+                    await api.deleteFile(id ? {fileId: id} : {filename: fn});
                     load();
-                } else {
+                } catch (err) {
+                    return alert("Delete failed: " + err.message);
                     alert("删除失败: " + (await res.json()).detail);
                 }
             };
@@ -267,13 +283,11 @@
         e.preventDefault();
         msg.style.color = "";
         msg.textContent = "上传中…";
-        const fd = new FormData();
-        fd.append("file", fileInput.files[0]);
-        const r = await fetch("/api/upload-pdb", {method: "POST", body: fd, headers: hdr});
-        const j = await r.json();
-        if (!r.ok) {
+        try {
+            await api.uploadFile(fileInput.files[0], {fileKind: "pdb"});
+        } catch (err) {
             msg.style.color = "#d33";
-            msg.textContent = j.detail;
+            msg.textContent = err.message;
             return
         }
         msg.style.color = "green";
